@@ -18,7 +18,7 @@ const char* ap_password = "12345678";
 WebServer server(80);
 
 // ==========================================
-// 2. Servo & Calibrated Offsets
+// 2. 6-DOF Servo & Calibrated Offsets
 // ==========================================
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 Preferences preferences;
@@ -38,32 +38,38 @@ struct Joint {
   int homeAngle;
 };
 
-// Calibrated Baselines: Right [CH 0: 8°, CH 1: 94°, CH 2: 94°] | Left [CH 6: 94°, CH 4: 94°, CH 5: 94°]
+// Calibrated 6-DOF Baselines:
+// Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 2 (Foot = 90°)
+// Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 5 (Foot = 90°)
 Joint servos[NUM_SERVOS] = {
-  {0, "Right Hip",   8.0f,  8.0f, -1,  8},
-  {1, "Right Knee", 94.0f, 94.0f, -1, 94},
-  {2, "Right Foot", 94.0f, 94.0f, -1, 94},
-  {6, "Left Hip",   94.0f, 94.0f, -1, 94},
-  {4, "Left Knee",  94.0f, 94.0f, -1, 94},
-  {5, "Left Foot",  94.0f, 94.0f, -1, 94}
+  {0, "Right Hip",   94.0f, 94.0f, -1, 94},
+  {1, "Right Knee",   8.0f,  8.0f, -1,  8},
+  {2, "Right Foot",  90.0f, 90.0f, -1, 90},
+  {4, "Left Hip",    94.0f, 94.0f, -1, 94},
+  {8, "Left Knee",   94.0f, 94.0f, -1, 94},
+  {5, "Left Foot",   90.0f, 90.0f, -1, 90}
 };
 
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
-// Locomotion Parameters
-float strideAmp = 12.0f;     // 12° Forward Stride Amplitude
-float walkFreq = 1.25f;      // 1.25 Hz Cadence
+float rollTilt = 24.0f;       // 24° Ankle tilt for clear, high foot clearance
+float strideAmp = 10.0f;      // 10° Hip swing forward
+float kneeAmp = 3.0f;         // 3.0° Safe gentle knee lift (avoids hitting hip bracket)
+float walkFreq = 0.8f;        // 0.8 Hz smooth cadence
+float strideDir = 1.0f;       // 1.0 = forward, -1.0 = backward
+float turnFactor = 0.0f;      // 0.0 = straight, +1.0 = turn left, -1.0 = turn right
+float currentGaitScale = 0.0f; // Smooth anti-jerk startup/stop ramp
 unsigned long walkStartTime = 0;
 
 void loadSavedOffsets() {
-  preferences.begin("biped", false);
-  servos[0].homeAngle = preferences.getInt("ch0", 8);
-  servos[1].homeAngle = preferences.getInt("ch1", 94);
-  servos[2].homeAngle = preferences.getInt("ch2", 94);
-  servos[3].homeAngle = preferences.getInt("ch6", 94);
-  servos[4].homeAngle = preferences.getInt("ch4", 94);
-  servos[5].homeAngle = preferences.getInt("ch5", 94);
+  preferences.begin("biped6dof", false);
+  servos[0].homeAngle = preferences.getInt("ch0", 94);
+  servos[1].homeAngle = preferences.getInt("ch1", 8);
+  servos[2].homeAngle = preferences.getInt("ch2", 90);
+  servos[3].homeAngle = preferences.getInt("ch4", 94);
+  servos[4].homeAngle = preferences.getInt("ch8", 94);
+  servos[5].homeAngle = preferences.getInt("ch5", 90);
   preferences.end();
 
   for (int i = 0; i < NUM_SERVOS; i++) {
@@ -73,12 +79,12 @@ void loadSavedOffsets() {
 }
 
 void saveCurrentOffsets() {
-  preferences.begin("biped", false);
+  preferences.begin("biped6dof", false);
   preferences.putInt("ch0", (int)servos[0].currentAngle);
   preferences.putInt("ch1", (int)servos[1].currentAngle);
   preferences.putInt("ch2", (int)servos[2].currentAngle);
-  preferences.putInt("ch6", (int)servos[3].currentAngle);
-  preferences.putInt("ch4", (int)servos[4].currentAngle);
+  preferences.putInt("ch4", (int)servos[3].currentAngle);
+  preferences.putInt("ch8", (int)servos[4].currentAngle);
   preferences.putInt("ch5", (int)servos[5].currentAngle);
   preferences.end();
 
@@ -88,15 +94,15 @@ void saveCurrentOffsets() {
 }
 
 void resetFactoryOffsets() {
-  preferences.begin("biped", false);
+  preferences.begin("biped6dof", false);
   preferences.clear();
   preferences.end();
-  servos[0].homeAngle = 8;   // Right Hip
-  servos[1].homeAngle = 94;  // Right Knee
-  servos[2].homeAngle = 94;  // Right Foot
-  servos[3].homeAngle = 94;  // Left Hip
-  servos[4].homeAngle = 94;  // Left Knee
-  servos[5].homeAngle = 94;  // Left Foot
+  servos[0].homeAngle = 94;  // Right Hip (CH 0)
+  servos[1].homeAngle = 8;   // Right Knee (CH 1)
+  servos[2].homeAngle = 90;  // Right Foot (CH 2)
+  servos[3].homeAngle = 94;  // Left Hip (CH 4)
+  servos[4].homeAngle = 94;  // Left Knee (CH 8)
+  servos[5].homeAngle = 90;  // Left Foot (CH 5)
   for (int i = 0; i < NUM_SERVOS; i++) {
     servos[i].currentAngle = (float)servos[i].homeAngle;
     servos[i].targetAngle  = (float)servos[i].homeAngle;
@@ -104,7 +110,7 @@ void resetFactoryOffsets() {
 }
 
 // ==========================================
-// 3. HTML Web Dashboard with Live Telemetry
+// 3. HTML Web Dashboard (6-DOF Full Studio)
 // ==========================================
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -112,7 +118,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Biped Robot Precision Studio</title>
+  <title>Biped Robot - 6-DOF Full Walking Studio</title>
   <style>
     :root {
       --bg-primary: #0a0e17;
@@ -132,7 +138,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }
     body { background-color: var(--bg-primary); color: var(--text-main); min-height: 100vh; padding: 12px; display: flex; flex-direction: column; align-items: center; }
-    .container { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 14px; }
+    .container { width: 100%; max-width: 850px; display: flex; flex-direction: column; gap: 14px; }
     header { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; }
     .logo-text { font-size: 1.15rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent-secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .status-badge { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; background: rgba(0,0,0,0.25); padding: 5px 10px; border-radius: 20px; border: 1px solid var(--border-color); }
@@ -145,7 +151,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .tracker-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; width: 100%; }
     .tracker-card { background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
     .tracker-joint-name { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); }
-    .tracker-angle-big { font-size: 1.4rem; font-weight: 900; color: var(--accent); font-family: monospace; }
+    .tracker-angle-big { font-size: 1.3rem; font-weight: 900; color: var(--accent); font-family: monospace; }
     .tracker-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
     .tracker-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-secondary)); width: 50%; transition: width 0.1s; }
 
@@ -170,7 +176,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .btn-save { background: rgba(16, 185, 129, 0.15); border-color: var(--success); color: var(--success); font-weight: 800; }
     .btn-reset { background: rgba(244, 63, 94, 0.15); border-color: var(--danger); color: #fda4af; font-weight: 800; }
 
-    .servo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; width: 100%; }
+    .servo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; width: 100%; }
     .servo-card { background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
     .servo-header { display: flex; justify-content: space-between; align-items: center; }
     .servo-name { font-size: 0.8rem; font-weight: 700; }
@@ -189,7 +195,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <div class="container">
     <header>
       <div class="logo-box">
-        <span class="logo-text">BIPED ROBOT PRECISION STUDIO</span>
+        <span class="logo-text">6-DOF BIPED WALKING STUDIO</span>
       </div>
       <div class="status-badge">
         <div class="status-dot"></div>
@@ -199,36 +205,36 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     <!-- Live Telemetry -->
     <section class="card">
-      <div class="card-title">📡 Real-Time Joint Telemetry</div>
+      <div class="card-title">📡 Real-Time 6-DOF Joint Telemetry</div>
       <div class="tracker-grid">
         <div class="tracker-card">
           <span class="tracker-joint-name">Right Hip (CH 0)</span>
-          <span class="tracker-angle-big" id="track-0">8°</span>
+          <span class="tracker-angle-big" id="track-0">94°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-0"></div></div>
         </div>
         <div class="tracker-card">
           <span class="tracker-joint-name">Right Knee (CH 1)</span>
-          <span class="tracker-angle-big" id="track-1">94°</span>
+          <span class="tracker-angle-big" id="track-1">8°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-1"></div></div>
         </div>
         <div class="tracker-card">
           <span class="tracker-joint-name">Right Foot (CH 2)</span>
-          <span class="tracker-angle-big" id="track-2">94°</span>
+          <span class="tracker-angle-big" id="track-2">90°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-2"></div></div>
         </div>
         <div class="tracker-card">
-          <span class="tracker-joint-name">Left Hip (CH 6)</span>
-          <span class="tracker-angle-big" id="track-6">94°</span>
-          <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-6"></div></div>
-        </div>
-        <div class="tracker-card">
-          <span class="tracker-joint-name">Left Knee (CH 4)</span>
+          <span class="tracker-joint-name">Left Hip (CH 4)</span>
           <span class="tracker-angle-big" id="track-4">94°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-4"></div></div>
         </div>
         <div class="tracker-card">
+          <span class="tracker-joint-name">Left Knee (CH 8)</span>
+          <span class="tracker-angle-big" id="track-8">94°</span>
+          <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-8"></div></div>
+        </div>
+        <div class="tracker-card">
           <span class="tracker-joint-name">Left Foot (CH 5)</span>
-          <span class="tracker-angle-big" id="track-5">94°</span>
+          <span class="tracker-angle-big" id="track-5">90°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-5"></div></div>
         </div>
       </div>
@@ -236,7 +242,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     <!-- Locomotion Actions -->
     <section class="card">
-      <div class="card-title">🚶 Locomotion (Dual-Leg Forward Strides)</div>
+      <div class="card-title">🚶 Weight-Shift Locomotion & Flash Save</div>
       <div class="dpad-container">
         <button class="dpad-btn btn-up" onclick="runGait('walk')">▲<span>Forward</span></button>
         <button class="dpad-btn btn-left" onclick="runGait('left')">◀<span>Turn L</span></button>
@@ -246,8 +252,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
 
       <div class="gait-actions">
-        <button class="btn" onclick="runGait('walk')" style="border-color: var(--success); color: var(--success); font-weight: 800;">🚀 1. Forward Walk Loop</button>
-        <button class="btn" onclick="runGait('step')" style="font-weight: 800;">🐾 2. Single Forward Stride</button>
+        <button class="btn" onclick="runGait('walk')" style="border-color: var(--success); color: var(--success); font-weight: 800;">🚀 1. Weight-Shift Walk Loop</button>
+        <button class="btn" onclick="runGait('step')" style="font-weight: 800;">🐾 2. Single Full Stride</button>
         <button class="btn" onclick="runGait('stand')" style="border-color: var(--danger); color: #fda4af;">🛑 3. Stand & Silence</button>
       </div>
 
@@ -257,12 +263,35 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
     </section>
 
+    <!-- Live Walking Gait Tuner -->
+    <section class="card">
+      <div class="card-title">🎛️ Live Walking Gait Tuner (Real-Time Adjustment)</div>
+      <div class="servo-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Body Roll (Foot Lift)</span><span class="angle-display" id="val-tilt">24°</span></div>
+          <div class="slider-box"><input type="range" id="slider-tilt" min="10" max="38" value="24" oninput="setGaitParam('tilt', this.value)"></div>
+        </div>
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Knee Clearance Lift</span><span class="angle-display" id="val-knee">3°</span></div>
+          <div class="slider-box"><input type="range" id="slider-knee" min="0" max="6" value="3" oninput="setGaitParam('knee', this.value)"></div>
+        </div>
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Hip Step Stride</span><span class="angle-display" id="val-stride">10°</span></div>
+          <div class="slider-box"><input type="range" id="slider-stride" min="4" max="25" value="10" oninput="setGaitParam('stride', this.value)"></div>
+        </div>
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Walk Cadence (Speed)</span><span class="angle-display" id="val-freq">0.8 Hz</span></div>
+          <div class="slider-box"><input type="range" id="slider-freq" min="4" max="20" value="8" oninput="setGaitParam('freq', this.value / 10.0)"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Right Leg Servos -->
-    <div class="leg-section-title leg-r-title">RIGHT LEG (CH 0: Hip=8°, CH 1: Knee=94°, CH 2: Foot=94°)</div>
+    <div class="leg-section-title leg-r-title">RIGHT LEG (CH 0: Hip, CH 1: Knee, CH 2: Foot)</div>
     <div class="servo-grid">
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Right Hip (CH 0)</span><span class="angle-display" id="angle-0">8 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-0" min="0" max="180" value="8" oninput="setAngle(0, this.value)" onchange="setAngle(0, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Right Hip (CH 0)</span><span class="angle-display" id="angle-0">94 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-0" min="0" max="180" value="94" oninput="setAngle(0, this.value)" onchange="setAngle(0, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(0, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(0, -5)">-5</button>
@@ -273,8 +302,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Right Knee (CH 1)</span><span class="angle-display" id="angle-1">94 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-1" min="0" max="180" value="94" oninput="setAngle(1, this.value)" onchange="setAngle(1, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Right Knee (CH 1)</span><span class="angle-display" id="angle-1">8 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-1" min="0" max="180" value="8" oninput="setAngle(1, this.value)" onchange="setAngle(1, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(1, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(1, -5)">-5</button>
@@ -285,8 +314,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Right Foot (CH 2)</span><span class="angle-display" id="angle-2">94 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-2" min="0" max="180" value="94" oninput="setAngle(2, this.value)" onchange="setAngle(2, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Right Foot (CH 2)</span><span class="angle-display" id="angle-2">90 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-2" min="0" max="180" value="90" oninput="setAngle(2, this.value)" onchange="setAngle(2, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(2, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(2, -5)">-5</button>
@@ -299,22 +328,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     </div>
 
     <!-- Left Leg Servos -->
-    <div class="leg-section-title leg-l-title">LEFT LEG (CH 6: Hip=94°, CH 4: Knee=94°, CH 5: Foot=94°)</div>
+    <div class="leg-section-title leg-l-title">LEFT LEG (CH 4: Hip, CH 8: Knee, CH 5: Foot)</div>
     <div class="servo-grid">
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Left Hip (CH 6)</span><span class="angle-display" id="angle-6">94 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-6" min="0" max="180" value="94" oninput="setAngle(6, this.value)" onchange="setAngle(6, this.value)"></div>
-        <div class="step-buttons">
-          <button class="step-btn" onclick="stepAngle(6, -10)">-10</button>
-          <button class="step-btn" onclick="stepAngle(6, -5)">-5</button>
-          <button class="step-btn" onclick="stepAngle(6, -1)">-1</button>
-          <button class="step-btn" onclick="stepAngle(6, 1)">+1</button>
-          <button class="step-btn" onclick="stepAngle(6, 5)">+5</button>
-          <button class="step-btn" onclick="stepAngle(6, 10)">+10</button>
-        </div>
-      </div>
-      <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Left Knee (CH 4)</span><span class="angle-display" id="angle-4">94 deg</span></div>
+        <div class="servo-header"><span class="servo-name">Left Hip (CH 4)</span><span class="angle-display" id="angle-4">94 deg</span></div>
         <div class="slider-box"><input type="range" id="slider-4" min="0" max="180" value="94" oninput="setAngle(4, this.value)" onchange="setAngle(4, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(4, -10)">-10</button>
@@ -326,8 +343,20 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Left Foot (CH 5)</span><span class="angle-display" id="angle-5">94 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-5" min="0" max="180" value="94" oninput="setAngle(5, this.value)" onchange="setAngle(5, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Left Knee (CH 8)</span><span class="angle-display" id="angle-8">94 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-8" min="0" max="180" value="94" oninput="setAngle(8, this.value)" onchange="setAngle(8, this.value)"></div>
+        <div class="step-buttons">
+          <button class="step-btn" onclick="stepAngle(8, -10)">-10</button>
+          <button class="step-btn" onclick="stepAngle(8, -5)">-5</button>
+          <button class="step-btn" onclick="stepAngle(8, -1)">-1</button>
+          <button class="step-btn" onclick="stepAngle(8, 1)">+1</button>
+          <button class="step-btn" onclick="stepAngle(8, 5)">+5</button>
+          <button class="step-btn" onclick="stepAngle(8, 10)">+10</button>
+        </div>
+      </div>
+      <div class="servo-card">
+        <div class="servo-header"><span class="servo-name">Left Foot (CH 5)</span><span class="angle-display" id="angle-5">90 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-5" min="0" max="180" value="90" oninput="setAngle(5, this.value)" onchange="setAngle(5, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(5, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(5, -5)">-5</button>
@@ -382,13 +411,23 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       sendCmd('/run_gait?gait=' + gait);
     }
 
+    function setGaitParam(param, val) {
+      val = parseFloat(val);
+      if (param === 'freq') {
+        document.getElementById('val-freq').innerText = val.toFixed(1) + ' Hz';
+      } else {
+        document.getElementById('val-' + param).innerText = val + '°';
+      }
+      sendCmd('/set_gait_param?param=' + param + '&val=' + val);
+    }
+
     function saveOffsets() {
       sendCmd('/save_offsets');
-      alert('Current Angles Saved Permanently to ESP32 Flash Memory!');
+      alert('All 6 Joint Angles Saved Permanently to ESP32 Flash Memory!');
     }
 
     function resetOffsets() {
-      if (confirm('Reset all angles to calibrated factory baselines?')) {
+      if (confirm('Reset all 6 joint angles to factory baselines?')) {
         sendCmd('/reset_offsets');
         setTimeout(pollTelemetry, 300);
       }
@@ -444,53 +483,92 @@ void setServoAngleDirect(int channel, float angle) {
 void parkStand() {
   gaitRunning = false;
   activeGaitName = "stand";
+  turnFactor = 0.0f;
+  strideDir = 1.0f;
+  // Smoothly ease down from motion to static stand (prevents jerks)
+  for (int step = 0; step < 12; step++) {
+    currentGaitScale *= 0.75f;
+    updateWeightShiftWalk();
+    delay(10);
+    server.handleClient();
+  }
+  currentGaitScale = 0.0f;
   for (int i = 0; i < NUM_SERVOS; i++) {
     servos[i].currentAngle = (float)servos[i].homeAngle;
     setServoAngleDirect(servos[i].channel, (float)servos[i].homeAngle);
   }
 }
 
-// Alternating Dual-Leg Forward Walking Engine
-void updateNonBlockingWalk() {
-  float t = (float)(millis() - walkStartTime) / 1000.0f;
-  float phase = fmod(2.0f * (float)M_PI * walkFreq * t, 2.0f * (float)M_PI);
-
-  float rhBase = (float)servos[0].homeAngle; // 8°
-  float lhBase = (float)servos[3].homeAngle; // 94°
-
-  float aHipR = rhBase;
-  float aHipL = lhBase;
-
-  if (phase < (float)M_PI) {
-    // Phase 1 (Right Stride): Right Hip reaches forward (8° -> 20° -> 8°), Left holds 94°
-    float swingFrac = sin(phase); // 0.0 -> 1.0 -> 0.0
-    aHipR = rhBase + (swingFrac * strideAmp);
-    aHipL = lhBase;
-  } else {
-    // Phase 2 (Left Stride): Left Hip reaches forward (94° -> 106° -> 94°), Right holds 8°
-    float swingFrac = sin(phase - (float)M_PI); // 0.0 -> 1.0 -> 0.0
-    aHipL = lhBase + (swingFrac * strideAmp);
-    aHipR = rhBase;
-  }
-
-  servos[0].currentAngle = aHipR; setServoAngleDirect(0, aHipR);
-  servos[3].currentAngle = aHipL; setServoAngleDirect(6, aHipL);
-
-  // Keep Knees and Feet locked at baselines
-  setServoAngleDirect(1, (float)servos[1].homeAngle);
-  setServoAngleDirect(2, (float)servos[2].homeAngle);
-  setServoAngleDirect(4, (float)servos[4].homeAngle);
-  setServoAngleDirect(5, (float)servos[5].homeAngle);
+// 6-DOF Weight-Shift Humanoid Walking Engine
+void move6Joints(float hr, float kr, float fr, float hl, float kl, float fl) {
+  servos[0].currentAngle = hr; setServoAngleDirect(0, hr); // CH 0 Right Hip
+  servos[1].currentAngle = kr; setServoAngleDirect(1, kr); // CH 1 Right Knee
+  servos[2].currentAngle = fr; setServoAngleDirect(2, fr); // CH 2 Right Foot
+  servos[3].currentAngle = hl; setServoAngleDirect(4, hl); // CH 4 Left Hip
+  servos[4].currentAngle = kl; setServoAngleDirect(8, kl); // CH 8 Left Knee
+  servos[5].currentAngle = fl; setServoAngleDirect(5, fl); // CH 5 Left Foot
 }
 
-// Single Stride
+// Advanced Anti-Shake & Soft-Landing Walking Engine
+void updateWeightShiftWalk() {
+  float t = (float)(millis() - walkStartTime) / 1000.0f;
+
+  // 1. Smooth Anti-Jerk Startup Ramp (eases in over 0.5 seconds)
+  if (gaitRunning) {
+    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.04f);
+  } else {
+    if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.06f);
+  }
+
+  float phase = 2.0f * (float)M_PI * walkFreq * t;
+  float sinP = sin(phase);
+  float cosP = cos(phase);
+
+  // 2. Anti-Shake S-Curve Harmonic Wave for Ankle Roll (soft lateral weight shifting)
+  float rollWave = sinP * (1.0f - 0.18f * cos(2.0f * phase));
+  float effectiveRoll = rollWave * rollTilt * currentGaitScale;
+
+  // 3. Smooth Air-to-Ground Soft Landing Knee Trajectory (zero impact landing)
+  float rawRLift = max(0.0f, sinP);
+  float rawLLift = max(0.0f, -sinP);
+  float rLift = pow(rawRLift, 1.8f); // Parabolic lift with zero-velocity soft touchdown
+  float lLift = pow(rawLLift, 1.8f);
+
+  // 4. Stance Leg Dynamic Cushioning (absorbs shift in ground reaction force)
+  float rStanceCushion = (1.0f - rawRLift) * 1.2f;
+  float lStanceCushion = (1.0f - rawLLift) * 1.2f;
+
+  float aKneeR = (float)servos[1].homeAngle + ((rLift * kneeAmp - rStanceCushion) * currentGaitScale);
+  float aKneeL = (float)servos[4].homeAngle + ((lLift * kneeAmp - lStanceCushion) * currentGaitScale);
+  aKneeR = constrain(aKneeR, 4.0f, 14.0f);
+  aKneeL = constrain(aKneeL, 91.0f, 98.0f); // Strict safety window: never hits Left Hip bracket
+
+  // 5. Harmonic Hip Stride with Turning Bias
+  float hipWave = cosP * (1.0f - 0.12f * cos(2.0f * phase));
+  float rStride = (strideDir * strideAmp) + (turnFactor * 4.0f);
+  float lStride = (strideDir * strideAmp) - (turnFactor * 4.0f);
+
+  float aHipR = (float)servos[0].homeAngle - (hipWave * rStride * currentGaitScale);
+  float aHipL = (float)servos[3].homeAngle + (hipWave * lStride * currentGaitScale);
+
+  // 6. Synchronized Ankle Roll
+  float aFootR = (float)servos[2].homeAngle + effectiveRoll;
+  float aFootL = (float)servos[5].homeAngle + effectiveRoll;
+
+  move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
+}
+
+// Single Stride (executes 1 full continuous 360° stride smoothly with soft start/stop)
 void executeSingleFullStride() {
+  gaitRunning = true;
+  strideDir = 1.0f;
+  turnFactor = 0.0f;
   unsigned long t0 = millis();
-  float periodMs = (1000.0f / walkFreq);
+  float periodMs = 1000.0f / walkFreq;
+  walkStartTime = t0;
   while (millis() - t0 < (unsigned long)periodMs) {
-    walkStartTime = t0;
-    updateNonBlockingWalk();
-    delay(15);
+    updateWeightShiftWalk();
+    delay(10);
     server.handleClient();
   }
   parkStand();
@@ -516,6 +594,8 @@ void handleSetServo() {
     activeGaitName = "manual";
     servos[idx].targetAngle = val;
     servos[idx].currentAngle = val;
+    setServoAngleDirect(ch, val);
+  } else {
     setServoAngleDirect(ch, val);
   }
   server.send(200, "application/json", "{\"status\":\"ok\"}");
@@ -548,11 +628,31 @@ void handleRunGait() {
     return;
   }
   String gait = server.arg("gait");
-  if (gait == "stand") {
+  if (gait == "stand" || gait == "stop") {
     parkStand();
   } else if (gait == "walk" || gait == "forward") {
     gaitRunning = true;
     activeGaitName = "walk";
+    strideDir = 1.0f;
+    turnFactor = 0.0f;
+    walkStartTime = millis();
+  } else if (gait == "backward" || gait == "back") {
+    gaitRunning = true;
+    activeGaitName = "backward";
+    strideDir = -1.0f;
+    turnFactor = 0.0f;
+    walkStartTime = millis();
+  } else if (gait == "left") {
+    gaitRunning = true;
+    activeGaitName = "turn_left";
+    strideDir = 0.6f;
+    turnFactor = 1.0f;
+    walkStartTime = millis();
+  } else if (gait == "right") {
+    gaitRunning = true;
+    activeGaitName = "turn_right";
+    strideDir = 0.6f;
+    turnFactor = -1.0f;
     walkStartTime = millis();
   } else if (gait == "step") {
     gaitRunning = false;
@@ -564,23 +664,38 @@ void handleRunGait() {
   server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"" + gait + "\"}");
 }
 
+void handleSetGaitParam() {
+  if (!server.hasArg("param") || !server.hasArg("val")) {
+    server.send(400, "application/json", "{\"error\":\"Missing arguments\"}");
+    return;
+  }
+  String param = server.arg("param");
+  float val = server.arg("val").toFloat();
+  if (param == "tilt") rollTilt = val;
+  else if (param == "stride") strideAmp = val;
+  else if (param == "knee") kneeAmp = val;
+  else if (param == "freq") walkFreq = val;
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
 // ==========================================
 // 6. Setup & Loop
 // ==========================================
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n--- Biped Robot Controller Starting ---");
+  Serial.println("\n--- 6-DOF Biped Robot Controller (Zero-Lag Mode) Starting ---");
 
   loadSavedOffsets();
 
   Wire.begin(21, 22);
+  Wire.setClock(400000); // 400kHz Fast Mode I2C for Zero-Lag Control
   Wire.setTimeOut(100);
   
   Wire.beginTransmission(0x40);
   if (Wire.endTransmission() == 0) {
     pcaFound = true;
-    Serial.println("[SUCCESS] PCA9685 found at 0x40!");
+    Serial.println("[SUCCESS] PCA9685 found at 0x40 (400kHz Fast I2C)!");
     pwm.begin();
     pwm.setPWMFreq(50);
     delay(50);
@@ -618,6 +733,7 @@ void setup() {
   server.on("/save_offsets", handleSaveOffsets);
   server.on("/reset_offsets", handleResetOffsets);
   server.on("/run_gait", handleRunGait);
+  server.on("/set_gait_param", handleSetGaitParam);
   server.begin();
   Serial.println("HTTP Web Server Started!");
 }
@@ -625,7 +741,7 @@ void setup() {
 void loop() {
   server.handleClient();
   if (gaitRunning && activeGaitName == "walk") {
-    updateNonBlockingWalk();
-    delay(15);
+    updateWeightShiftWalk();
+    delay(10);
   }
 }
