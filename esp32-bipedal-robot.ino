@@ -40,14 +40,14 @@ struct Joint {
 
 // Calibrated 6-DOF Baselines:
 // Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 2 (Foot = 90°)
-// Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 5 (Foot = 90°)
+// Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 12 (Foot = 90°)
 Joint servos[NUM_SERVOS] = {
-  {0, "Right Hip",   94.0f, 94.0f, -1, 94},
-  {1, "Right Knee",   8.0f,  8.0f, -1,  8},
-  {2, "Right Foot",  90.0f, 90.0f, -1, 90},
-  {4, "Left Hip",    94.0f, 94.0f, -1, 94},
-  {8, "Left Knee",   94.0f, 94.0f, -1, 94},
-  {5, "Left Foot",   90.0f, 90.0f, -1, 90}
+  {0,  "Right Hip",   94.0f, 94.0f, -1, 94},
+  {1,  "Right Knee",   8.0f,  8.0f, -1,  8},
+  {2,  "Right Foot",  90.0f, 90.0f, -1, 90},
+  {4,  "Left Hip",    94.0f, 94.0f, -1, 94},
+  {8,  "Left Knee",   94.0f, 94.0f, -1, 94},
+  {12, "Left Foot",   90.0f, 90.0f, -1, 90}
 };
 
 String activeGaitName = "stand";
@@ -55,7 +55,7 @@ bool gaitRunning = false;
 
 float rollTilt = 24.0f;       // 24° Ankle tilt for clear, high foot clearance
 float strideAmp = 10.0f;      // 10° Hip swing forward
-float kneeAmp = 3.0f;         // 3.0° Safe gentle knee lift (avoids hitting hip bracket)
+float kneeAmp = 0.0f;         // 0.0° (knees locked at baselines to prevent all bracket collisions)
 float walkFreq = 0.8f;        // 0.8 Hz smooth cadence
 float strideDir = 1.0f;       // 1.0 = forward, -1.0 = backward
 float turnFactor = 0.0f;      // 0.0 = straight, +1.0 = turn left, -1.0 = turn right
@@ -69,7 +69,7 @@ void loadSavedOffsets() {
   servos[2].homeAngle = preferences.getInt("ch2", 90);
   servos[3].homeAngle = preferences.getInt("ch4", 94);
   servos[4].homeAngle = preferences.getInt("ch8", 94);
-  servos[5].homeAngle = preferences.getInt("ch5", 90);
+  servos[5].homeAngle = preferences.getInt("ch12", 90);
   preferences.end();
 
   for (int i = 0; i < NUM_SERVOS; i++) {
@@ -85,7 +85,7 @@ void saveCurrentOffsets() {
   preferences.putInt("ch2", (int)servos[2].currentAngle);
   preferences.putInt("ch4", (int)servos[3].currentAngle);
   preferences.putInt("ch8", (int)servos[4].currentAngle);
-  preferences.putInt("ch5", (int)servos[5].currentAngle);
+  preferences.putInt("ch12", (int)servos[5].currentAngle);
   preferences.end();
 
   for (int i = 0; i < NUM_SERVOS; i++) {
@@ -102,7 +102,7 @@ void resetFactoryOffsets() {
   servos[2].homeAngle = 90;  // Right Foot (CH 2)
   servos[3].homeAngle = 94;  // Left Hip (CH 4)
   servos[4].homeAngle = 94;  // Left Knee (CH 8)
-  servos[5].homeAngle = 90;  // Left Foot (CH 5)
+  servos[5].homeAngle = 90;  // Left Foot (CH 12)
   for (int i = 0; i < NUM_SERVOS; i++) {
     servos[i].currentAngle = (float)servos[i].homeAngle;
     servos[i].targetAngle  = (float)servos[i].homeAngle;
@@ -233,9 +233,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-8"></div></div>
         </div>
         <div class="tracker-card">
-          <span class="tracker-joint-name">Left Foot (CH 5)</span>
-          <span class="tracker-angle-big" id="track-5">90°</span>
-          <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-5"></div></div>
+          <span class="tracker-joint-name">Left Foot (CH 12)</span>
+          <span class="tracker-angle-big" id="track-12">90°</span>
+          <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-12"></div></div>
         </div>
       </div>
     </section>
@@ -272,8 +272,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="slider-box"><input type="range" id="slider-tilt" min="10" max="38" value="24" oninput="setGaitParam('tilt', this.value)"></div>
         </div>
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Knee Clearance Lift</span><span class="angle-display" id="val-knee">3°</span></div>
-          <div class="slider-box"><input type="range" id="slider-knee" min="0" max="6" value="3" oninput="setGaitParam('knee', this.value)"></div>
+          <div class="servo-header"><span class="servo-name">Knee Clearance Lift</span><span class="angle-display" id="val-knee">0°</span></div>
+          <div class="slider-box"><input type="range" id="slider-knee" min="0" max="6" value="0" oninput="setGaitParam('knee', this.value)"></div>
         </div>
         <div class="servo-card">
           <div class="servo-header"><span class="servo-name">Hip Step Stride</span><span class="angle-display" id="val-stride">10°</span></div>
@@ -328,7 +328,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     </div>
 
     <!-- Left Leg Servos -->
-    <div class="leg-section-title leg-l-title">LEFT LEG (CH 4: Hip, CH 8: Knee, CH 5: Foot)</div>
+    <div class="leg-section-title leg-l-title">LEFT LEG (CH 4: Hip, CH 8: Knee, CH 12: Foot)</div>
     <div class="servo-grid">
       <div class="servo-card">
         <div class="servo-header"><span class="servo-name">Left Hip (CH 4)</span><span class="angle-display" id="angle-4">94 deg</span></div>
@@ -355,15 +355,15 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Left Foot (CH 5)</span><span class="angle-display" id="angle-5">90 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-5" min="0" max="180" value="90" oninput="setAngle(5, this.value)" onchange="setAngle(5, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Left Foot (CH 12)</span><span class="angle-display" id="angle-12">90 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-12" min="0" max="180" value="90" oninput="setAngle(12, this.value)" onchange="setAngle(12, this.value)"></div>
         <div class="step-buttons">
-          <button class="step-btn" onclick="stepAngle(5, -10)">-10</button>
-          <button class="step-btn" onclick="stepAngle(5, -5)">-5</button>
-          <button class="step-btn" onclick="stepAngle(5, -1)">-1</button>
-          <button class="step-btn" onclick="stepAngle(5, 1)">+1</button>
-          <button class="step-btn" onclick="stepAngle(5, 5)">+5</button>
-          <button class="step-btn" onclick="stepAngle(5, 10)">+10</button>
+          <button class="step-btn" onclick="stepAngle(12, -10)">-10</button>
+          <button class="step-btn" onclick="stepAngle(12, -5)">-5</button>
+          <button class="step-btn" onclick="stepAngle(12, -1)">-1</button>
+          <button class="step-btn" onclick="stepAngle(12, 1)">+1</button>
+          <button class="step-btn" onclick="stepAngle(12, 5)">+5</button>
+          <button class="step-btn" onclick="stepAngle(12, 10)">+10</button>
         </div>
       </div>
     </div>
@@ -506,7 +506,7 @@ void move6Joints(float hr, float kr, float fr, float hl, float kl, float fl) {
   servos[2].currentAngle = fr; setServoAngleDirect(2, fr); // CH 2 Right Foot
   servos[3].currentAngle = hl; setServoAngleDirect(4, hl); // CH 4 Left Hip
   servos[4].currentAngle = kl; setServoAngleDirect(8, kl); // CH 8 Left Knee
-  servos[5].currentAngle = fl; setServoAngleDirect(5, fl); // CH 5 Left Foot
+  servos[5].currentAngle = fl; setServoAngleDirect(12, fl); // CH 12 Left Foot
 }
 
 // Advanced Anti-Shake & Soft-Landing Walking Engine
@@ -534,12 +534,8 @@ void updateWeightShiftWalk() {
   float rLift = pow(rawRLift, 1.8f); // Parabolic lift with zero-velocity soft touchdown
   float lLift = pow(rawLLift, 1.8f);
 
-  // 4. Stance Leg Dynamic Cushioning (absorbs shift in ground reaction force)
-  float rStanceCushion = (1.0f - rawRLift) * 1.2f;
-  float lStanceCushion = (1.0f - rawLLift) * 1.2f;
-
-  float aKneeR = (float)servos[1].homeAngle + ((rLift * kneeAmp - rStanceCushion) * currentGaitScale);
-  float aKneeL = (float)servos[4].homeAngle + ((lLift * kneeAmp - lStanceCushion) * currentGaitScale);
+  float aKneeR = (float)servos[1].homeAngle + (rLift * kneeAmp * currentGaitScale);
+  float aKneeL = (float)servos[4].homeAngle + (lLift * kneeAmp * currentGaitScale);
   aKneeR = constrain(aKneeR, 4.0f, 14.0f);
   aKneeL = constrain(aKneeL, 91.0f, 98.0f); // Strict safety window: never hits Left Hip bracket
 
