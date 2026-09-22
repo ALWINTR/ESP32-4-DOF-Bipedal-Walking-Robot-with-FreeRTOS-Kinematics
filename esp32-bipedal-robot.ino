@@ -53,7 +53,7 @@ Joint servos[NUM_SERVOS] = {
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
-float rollTilt = 24.0f;       // 24° Ankle tilt for clear, high foot clearance
+float rollTilt = 8.0f;        // 8.0° Safe ankle roll tilt (prevents foot/knee bracket collision)
 float strideAmp = 10.0f;      // 10° Hip swing forward
 float kneeAmp = 0.0f;         // 0.0° (knees locked at baselines to prevent all bracket collisions)
 float walkFreq = 0.8f;        // 0.8 Hz smooth cadence
@@ -268,8 +268,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <div class="card-title">🎛️ Live Walking Gait Tuner (Real-Time Adjustment)</div>
       <div class="servo-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Body Roll (Foot Lift)</span><span class="angle-display" id="val-tilt">24°</span></div>
-          <div class="slider-box"><input type="range" id="slider-tilt" min="10" max="38" value="24" oninput="setGaitParam('tilt', this.value)"></div>
+          <div class="servo-header"><span class="servo-name">Body Roll (Foot Tilt)</span><span class="angle-display" id="val-tilt">8°</span></div>
+          <div class="slider-box"><input type="range" id="slider-tilt" min="2" max="14" value="8" oninput="setGaitParam('tilt', this.value)"></div>
         </div>
         <div class="servo-card">
           <div class="servo-header"><span class="servo-name">Knee Clearance Lift</span><span class="angle-display" id="val-knee">0°</span></div>
@@ -547,9 +547,11 @@ void updateWeightShiftWalk() {
   float aHipR = (float)servos[0].homeAngle - (hipWave * rStride * currentGaitScale);
   float aHipL = (float)servos[3].homeAngle + (hipWave * lStride * currentGaitScale);
 
-  // 6. Synchronized Ankle Roll
+  // 6. Synchronized Ankle Roll (Strict safety bracket clearance: 82° to 98°)
   float aFootR = (float)servos[2].homeAngle + effectiveRoll;
   float aFootL = (float)servos[5].homeAngle + effectiveRoll;
+  aFootR = constrain(aFootR, 82.0f, 98.0f);
+  aFootL = constrain(aFootL, 82.0f, 98.0f);
 
   move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
 }
