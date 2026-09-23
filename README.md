@@ -24,11 +24,11 @@ An advanced, WiFi-enabled **6-DOF Humanoid Bipedal Robot Controller** built with
 
 ---
 
-## 📐 Hardware Architecture & Channel Mapping
+## 📐 Hardware Architecture & 38-Pin ESP32 Mapping
 
 ```
                  +-----------------------------------+
-                 |           ESP32 MCU               |
+                 |      ESP32 38-Pin DevKit MCU      |
                  |  (WiFi AP + Station Web Server)   |
                  +-----------------+-----------------+
                                    | I2C (GPIO21 / GPIO22) @ 400kHz
@@ -45,15 +45,28 @@ An advanced, WiFi-enabled **6-DOF Humanoid Bipedal Robot Controller** built with
    - CH 2: Right Foot  (Neutral: 90°)                  - CH 12: Left Foot (Neutral: 90°)
 ```
 
-### Pinout Connections
+### 38-Pin ESP32 to PCA9685 Wiring
 
-| ESP32 Pin | PCA9685 Pin | Function |
-| :--- | :--- | :--- |
-| `GPIO 21` | `SDA` | I2C Data Line |
-| `GPIO 22` | `SCL` | I2C Clock Line |
-| `3.3V` / `5V` | `VCC` | Logic Power |
-| `GND` | `GND` | Common Ground |
-| *External 5V-6V (3A+)* | `V+` / `GND` | High-Current Servo Power |
+```
+   38-Pin ESP32 DevKit                       PCA9685 16-Ch Driver
++------------------------+                  +--------------------+
+|                [3V3]   |                  |                    |
+|                [GND] --+----------------->| [GND] (Logic GND)  |
+|                [VIN] --+----------------->| [VCC] (Logic 3.3-5V|
+|                [D21] --+----------------->| [SDA] (I2C Data)   |
+|                [D22] --+----------------->| [SCL] (I2C Clock)  |
++------------------------+                  +--------------------+
+                                                      |
+ External Battery / 5V-6V (3A+) --------------------> | [V+] / [GND] (Servo Power)
+```
+
+| ESP32 38-Pin Header | Label on Board | PCA9685 Pin | Function |
+| :--- | :--- | :--- | :--- |
+| **Right Side (Pin 2)** | `D21` (GPIO 21) | `SDA` | I2C Data (400kHz Fast Mode) |
+| **Left Side (Pin 17)** | `D22` (GPIO 22) | `SCL` | I2C Clock (400kHz Fast Mode) |
+| **Left Side (Pin 1)**  | `3V3` / `VIN`   | `VCC` | Logic Power (3.3V or 5V) |
+| **Left / Right**       | `GND`           | `GND` | Common Ground Reference |
+| **Power Screw Terminal** | *External 5V-6V* | `V+` / `GND` | High-Current Dedicated Servo Rail |
 
 ---
 
