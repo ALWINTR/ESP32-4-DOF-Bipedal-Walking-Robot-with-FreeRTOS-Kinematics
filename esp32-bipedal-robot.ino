@@ -539,16 +539,17 @@ void updateWeightShiftWalk() {
   float aKneeL = (float)servos[4].homeAngle; // Left Knee permanently locked at 94°
   float aFootL = (float)servos[5].homeAngle; // Left Foot permanently locked flat at 94°
 
-  // 4. Smooth Anti-Phase Harmonic Hip Locomotion
-  float hipWave = cosP * (1.0f - 0.12f * cos(2.0f * phase));
-  float rStride = (strideDir * strideAmp) + (turnFactor * 2.0f);
-  float lStride = (strideDir * strideAmp) - (turnFactor * 2.0f);
+  // 4. Collision-Free Unipolar Forward Hip Locomotion
+  // Right Hip swings forward (94° -> 99° -> 94°), NEVER backward below 94° (prevents Right Knee bracket collision!)
+  // Left Hip swings forward (94° -> 89° -> 94°), NEVER backward above 94°
+  float rForwardWave = max(0.0f, sinP);  // 0 to 1 during Right leg step
+  float lForwardWave = max(0.0f, -sinP); // 0 to 1 during Left leg step
 
-  float aHipR = (float)servos[0].homeAngle - (hipWave * rStride * currentGaitScale);
-  float aHipL = (float)servos[3].homeAngle - (hipWave * lStride * currentGaitScale);
+  float aHipR = (float)servos[0].homeAngle + (rForwardWave * strideAmp * strideDir * currentGaitScale);
+  float aHipL = (float)servos[3].homeAngle - (lForwardWave * strideAmp * strideDir * currentGaitScale);
 
-  aHipR = constrain(aHipR, 86.0f, 102.0f);
-  aHipL = constrain(aHipL, 86.0f, 102.0f);
+  aHipR = constrain(aHipR, 94.0f, 100.0f); // NEVER decreases below 94°! Zero knee bracket collision!
+  aHipL = constrain(aHipL, 88.0f, 94.0f);  // NEVER increases above 94°! Zero knee bracket collision!
 
   move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
 }
