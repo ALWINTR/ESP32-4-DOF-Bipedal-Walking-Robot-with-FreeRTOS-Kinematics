@@ -531,10 +531,15 @@ void updateWeightShiftWalk() {
   float rLift = pow(rawRLift, 1.8f); // Parabolic lift with zero-velocity soft touchdown
   float lLift = pow(rawLLift, 1.8f);
 
-  float aKneeR = (float)servos[1].homeAngle; // Right Knee solidly locked at 8°
-  float aKneeL = (float)servos[4].homeAngle; // Left Knee solidly locked at 94°
+  // 3. Knees and Feet Solidly Locked at Neutral Flat Baselines
+  // Both knees and both feet stay strictly locked at their calibrated angles during walking.
+  // This guarantees 100% physically that knees can NEVER collide or touch the feet!
+  float aKneeR = (float)servos[1].homeAngle; // Right Knee permanently locked at 8°
+  float aFootR = (float)servos[2].homeAngle; // Right Foot permanently locked flat at 94°
+  float aKneeL = (float)servos[4].homeAngle; // Left Knee permanently locked at 94°
+  float aFootL = (float)servos[5].homeAngle; // Left Foot permanently locked flat at 94°
 
-  // 5. Dynamic Harmonic Hip Stride (Continuous anti-phase forward walking)
+  // 4. Smooth Anti-Phase Harmonic Hip Locomotion
   float hipWave = cosP * (1.0f - 0.12f * cos(2.0f * phase));
   float rStride = (strideDir * strideAmp) + (turnFactor * 2.0f);
   float lStride = (strideDir * strideAmp) - (turnFactor * 2.0f);
@@ -542,15 +547,8 @@ void updateWeightShiftWalk() {
   float aHipR = (float)servos[0].homeAngle - (hipWave * rStride * currentGaitScale);
   float aHipL = (float)servos[3].homeAngle - (hipWave * lStride * currentGaitScale);
 
-  // 6. Dynamic Stance-Phase Micro-Roll (Ground-Reaction CoM Shifting)
-  // Stance foot tilts gently outward; swing foot stays flat at neutral (94°) with zero knee collision!
-  float rStance = constrain(-sinP, 0.0f, 1.0f); // 1.0 when Right is stance, 0.0 when Right is swing
-  float lStance = constrain(sinP, 0.0f, 1.0f);  // 1.0 when Left is stance, 0.0 when Left is swing
-
-  float aFootR = (float)servos[2].homeAngle - (rollTilt * rStance * currentGaitScale);
-  float aFootL = (float)servos[5].homeAngle + (rollTilt * lStance * currentGaitScale);
-  aFootR = constrain(aFootR, 88.0f, (float)servos[2].homeAngle); // 88° to 94° (outward only, never inward past 94°)
-  aFootL = constrain(aFootL, (float)servos[5].homeAngle, 100.0f); // 94° to 100° (outward only, never inward past 94°)
+  aHipR = constrain(aHipR, 86.0f, 102.0f);
+  aHipL = constrain(aHipL, 86.0f, 102.0f);
 
   move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
 }
