@@ -42,7 +42,7 @@ An advanced, WiFi-enabled **6-DOF Humanoid Bipedal Robot Controller** built with
    [ RIGHT LEG ]                                       [ LEFT LEG ]
    - CH 0: Right Hip   (Neutral: 94°)                  - CH 4: Left Hip   (Neutral: 94°)
    - CH 1: Right Knee  (Neutral: 8°)                   - CH 8: Left Knee  (Neutral: 94°)
-   - CH 2: Right Foot  (Neutral: 90°)                  - CH 12: Left Foot (Neutral: 90°)
+   - CH 2: Right Foot  (Neutral: 84° - cleared from right knee) - CH 12: Left Foot (Neutral: 90°)
 ```
 
 ### 38-Pin ESP32 to PCA9685 Wiring

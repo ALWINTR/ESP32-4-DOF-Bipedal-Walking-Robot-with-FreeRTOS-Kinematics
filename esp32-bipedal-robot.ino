@@ -39,12 +39,12 @@ struct Joint {
 };
 
 // Calibrated 6-DOF Baselines:
-// Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 2 (Foot = 90°)
+// Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 2 (Foot = 84°)
 // Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 12 (Foot = 90°)
 Joint servos[NUM_SERVOS] = {
   {0,  "Right Hip",   94.0f, 94.0f, -1, 94},
   {1,  "Right Knee",   8.0f,  8.0f, -1,  8},
-  {2,  "Right Foot",  90.0f, 90.0f, -1, 90},
+  {2,  "Right Foot",  84.0f, 84.0f, -1, 84},
   {4,  "Left Hip",    94.0f, 94.0f, -1, 94},
   {8,  "Left Knee",   94.0f, 94.0f, -1, 94},
   {12, "Left Foot",   90.0f, 90.0f, -1, 90}
@@ -66,7 +66,7 @@ void loadSavedOffsets() {
   preferences.begin("biped6dof", false);
   servos[0].homeAngle = preferences.getInt("ch0", 94);
   servos[1].homeAngle = preferences.getInt("ch1", 8);
-  servos[2].homeAngle = preferences.getInt("ch2", 90);
+  servos[2].homeAngle = preferences.getInt("ch2", 84);
   servos[3].homeAngle = preferences.getInt("ch4", 94);
   servos[4].homeAngle = preferences.getInt("ch8", 94);
   servos[5].homeAngle = preferences.getInt("ch12", 90);
@@ -99,7 +99,7 @@ void resetFactoryOffsets() {
   preferences.end();
   servos[0].homeAngle = 94;  // Right Hip (CH 0)
   servos[1].homeAngle = 8;   // Right Knee (CH 1)
-  servos[2].homeAngle = 90;  // Right Foot (CH 2)
+  servos[2].homeAngle = 84;  // Right Foot (CH 2, 84° safe clearance from knee)
   servos[3].homeAngle = 94;  // Left Hip (CH 4)
   servos[4].homeAngle = 94;  // Left Knee (CH 8)
   servos[5].homeAngle = 90;  // Left Foot (CH 12)
@@ -219,7 +219,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
         <div class="tracker-card">
           <span class="tracker-joint-name">Right Foot (CH 2)</span>
-          <span class="tracker-angle-big" id="track-2">90°</span>
+          <span class="tracker-angle-big" id="track-2">84°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-2"></div></div>
         </div>
         <div class="tracker-card">
@@ -314,8 +314,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Right Foot (CH 2)</span><span class="angle-display" id="angle-2">90 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-2" min="0" max="180" value="90" oninput="setAngle(2, this.value)" onchange="setAngle(2, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Right Foot (CH 2)</span><span class="angle-display" id="angle-2">84 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-2" min="0" max="180" value="84" oninput="setAngle(2, this.value)" onchange="setAngle(2, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(2, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(2, -5)">-5</button>
@@ -547,10 +547,12 @@ void updateWeightShiftWalk() {
   float aHipR = (float)servos[0].homeAngle - (hipWave * rStride * currentGaitScale);
   float aHipL = (float)servos[3].homeAngle + (hipWave * lStride * currentGaitScale);
 
-  // 6. Synchronized Ankle Roll (Strict safety bracket clearance: 82° to 98°)
+  // 6. Synchronized Ankle Roll (Strict safety bracket clearance)
+  // Right Foot: baseline 84°, constrained 76° to 88° (stops before touching Right Knee)
+  // Left Foot: baseline 90°, constrained 82° to 98°
   float aFootR = (float)servos[2].homeAngle + effectiveRoll;
   float aFootL = (float)servos[5].homeAngle + effectiveRoll;
-  aFootR = constrain(aFootR, 82.0f, 98.0f);
+  aFootR = constrain(aFootR, 76.0f, 88.0f);
   aFootL = constrain(aFootL, 82.0f, 98.0f);
 
   move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
