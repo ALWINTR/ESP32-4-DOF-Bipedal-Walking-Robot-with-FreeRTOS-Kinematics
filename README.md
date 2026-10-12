@@ -82,7 +82,7 @@ Once connected to your local WiFi or the ESP32 Access Point (`ESP32-Biped-Robot`
 | `/get_angles` | `GET` | — | Returns JSON telemetry of all 6 joint angles & gait state |
 | `/set_servo` | `GET` | `ch=<channel>&val=<angle>` | Moves a single joint directly in real time |
 | `/run_gait` | `GET` | `gait=<walk\|backward\|left\|right\|step\|stand>` | Triggers locomotion modes |
-| `/set_gait_param`| `GET` | `param=<tilt\|knee\|stride\|freq>&val=<val>` | Dynamically tunes gait parameters in real time |
+| `/set_gait_param`| `GET` | `param=<length\|clearance\|height\|velocity>&val=<val>` | Dynamically tunes gait parameters in real time |
 | `/save_offsets` | `GET` | — | Persists current angles to ESP32 Flash memory |
 | `/reset_offsets`| `GET` | — | Restores factory neutral joint baselines |
 
