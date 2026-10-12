@@ -39,11 +39,11 @@ struct Joint {
 };
 
 // Calibrated 6-DOF Baselines (Exact Physical Wiring Specifications):
-// Right Leg: CH 0 (Knee = 8°), CH 1 (Hip = 94°),  CH 2 (Foot = 94°)
+// Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 2 (Foot = 94°)
 // Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 12 (Foot = 94°)
 Joint servos[NUM_SERVOS] = {
-  {0,  "Right Knee",   8.0f,  8.0f, -1,  8},
-  {1,  "Right Hip",   94.0f, 94.0f, -1, 94},
+  {0,  "Right Hip",   94.0f, 94.0f, -1, 94},
+  {1,  "Right Knee",   8.0f,  8.0f, -1,  8},
   {2,  "Right Foot",  94.0f, 94.0f, -1, 94},
   {4,  "Left Hip",    94.0f, 94.0f, -1, 94},
   {8,  "Left Knee",   94.0f, 94.0f, -1, 94},
@@ -56,7 +56,7 @@ bool gaitRunning = false;
 // Micro-Amplitude Dynamic Gait Parameters (smooth, small, zero bracket collision)
 float rollTilt = 4.0f;        // 4.0° Micro lateral weight-shift roll
 float strideAmp = 5.0f;       // 5.0° Micro hip forward stride
-float kneeAmp = 0.0f;         // 0.0° Knees locked solid at baseline (CH0=8°, CH8=94°)
+float kneeAmp = 0.0f;         // 0.0° Knees locked solid at baseline (CH1=8°, CH8=94°)
 float walkFreq = 0.75f;       // 0.75 Hz calm, stable cadence
 float strideDir = 1.0f;       // 1.0 = forward, -1.0 = backward
 float turnFactor = 0.0f;      // 0.0 = straight, +1.0 = turn left, -1.0 = turn right
@@ -65,8 +65,8 @@ unsigned long walkStartTime = 0;
 
 void loadSavedOffsets() {
   preferences.begin("biped_chmap", false);
-  servos[0].homeAngle = preferences.getInt("ch0", 8);   // Right Knee
-  servos[1].homeAngle = preferences.getInt("ch1", 94);  // Right Hip
+  servos[0].homeAngle = preferences.getInt("ch0", 94);  // Right Hip
+  servos[1].homeAngle = preferences.getInt("ch1", 8);   // Right Knee
   servos[2].homeAngle = preferences.getInt("ch2", 94);  // Right Foot
   servos[3].homeAngle = preferences.getInt("ch4", 94);  // Left Hip
   servos[4].homeAngle = preferences.getInt("ch8", 94);  // Left Knee
@@ -98,8 +98,8 @@ void resetFactoryOffsets() {
   preferences.begin("biped_chmap", false);
   preferences.clear();
   preferences.end();
-  servos[0].homeAngle = 8;  // Right Knee
-  servos[1].homeAngle = 94; // Right Hip
+  servos[0].homeAngle = 94; // Right Hip
+  servos[1].homeAngle = 8;  // Right Knee
   servos[2].homeAngle = 94; // Right Foot
   servos[3].homeAngle = 94; // Left Hip
   servos[4].homeAngle = 94; // Left Knee
@@ -209,13 +209,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <div class="card-title">📡 Real-Time 6-DOF Joint Telemetry</div>
       <div class="tracker-grid">
         <div class="tracker-card">
-          <span class="tracker-joint-name">Right Knee (CH 0)</span>
-          <span class="tracker-angle-big" id="track-0">8°</span>
+          <span class="tracker-joint-name">Right Hip (CH 0)</span>
+          <span class="tracker-angle-big" id="track-0">94°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-0"></div></div>
         </div>
         <div class="tracker-card">
-          <span class="tracker-joint-name">Right Hip (CH 1)</span>
-          <span class="tracker-angle-big" id="track-1">94°</span>
+          <span class="tracker-joint-name">Right Knee (CH 1)</span>
+          <span class="tracker-angle-big" id="track-1">8°</span>
           <div class="tracker-bar-bg"><div class="tracker-bar-fill" id="bar-1"></div></div>
         </div>
         <div class="tracker-card">
@@ -284,11 +284,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     </section>
 
     <!-- Right Leg Servos -->
-    <div class="leg-section-title leg-r-title">RIGHT LEG (CH 0: Knee=8°, CH 1: Hip=94°, CH 2: Foot=94°)</div>
+    <div class="leg-section-title leg-r-title">RIGHT LEG (CH 0: Hip=94°, CH 1: Knee=8°, CH 2: Foot=94°)</div>
     <div class="servo-grid">
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Right Knee (CH 0)</span><span class="angle-display" id="angle-0">8 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-0" min="0" max="180" value="8" oninput="setAngle(0, this.value)" onchange="setAngle(0, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Right Hip (CH 0)</span><span class="angle-display" id="angle-0">94 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-0" min="0" max="180" value="94" oninput="setAngle(0, this.value)" onchange="setAngle(0, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(0, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(0, -5)">-5</button>
@@ -299,8 +299,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
       <div class="servo-card">
-        <div class="servo-header"><span class="servo-name">Right Hip (CH 1)</span><span class="angle-display" id="angle-1">94 deg</span></div>
-        <div class="slider-box"><input type="range" id="slider-1" min="0" max="180" value="94" oninput="setAngle(1, this.value)" onchange="setAngle(1, this.value)"></div>
+        <div class="servo-header"><span class="servo-name">Right Knee (CH 1)</span><span class="angle-display" id="angle-1">8 deg</span></div>
+        <div class="slider-box"><input type="range" id="slider-1" min="0" max="180" value="8" oninput="setAngle(1, this.value)" onchange="setAngle(1, this.value)"></div>
         <div class="step-buttons">
           <button class="step-btn" onclick="stepAngle(1, -10)">-10</button>
           <button class="step-btn" onclick="stepAngle(1, -5)">-5</button>
@@ -514,8 +514,8 @@ void parkStand() {
 
 // 6-DOF Weight-Shift Humanoid Walking Engine
 void move6Joints(float hr, float kr, float fr, float hl, float kl, float fl) {
-  servos[0].currentAngle = kr; setServoAngleDirect(0, kr); // CH 0 Right Knee (8°)
-  servos[1].currentAngle = hr; setServoAngleDirect(1, hr); // CH 1 Right Hip (94°)
+  servos[0].currentAngle = hr; setServoAngleDirect(0, hr); // CH 0 Right Hip (94°)
+  servos[1].currentAngle = kr; setServoAngleDirect(1, kr); // CH 1 Right Knee (8°)
   servos[2].currentAngle = fr; setServoAngleDirect(2, fr); // CH 2 Right Foot (94°)
   servos[3].currentAngle = hl; setServoAngleDirect(4, hl); // CH 4 Left Hip (94°)
   servos[4].currentAngle = kl; setServoAngleDirect(8, kl); // CH 8 Left Knee (94°)
@@ -544,28 +544,26 @@ void updateWeightShiftWalk() {
   // 3. Smooth Air-to-Ground Soft Landing Knee Trajectory (zero impact landing)
   float rawRLift = max(0.0f, sinP);
   float rawLLift = max(0.0f, -sinP);
-  float rLift = pow(rawRLift, 1.8f); // Parabolic lift with zero-velocity soft touchdown
+  float rLift = pow(rawRLift, 1.8f);
   float lLift = pow(rawLLift, 1.8f);
 
-  // 3. Knees and Feet Solidly Locked at Neutral Flat Baselines
-  // Both knees and both feet stay strictly locked at their calibrated angles during walking.
-  // This guarantees 100% physically that knees can NEVER collide or touch the feet!
-  float aKneeR = (float)servos[0].homeAngle; // Right Knee (CH 0) permanently locked at 8°
-  float aFootR = (float)servos[2].homeAngle; // Right Foot (CH 2) permanently locked flat at 94°
-  float aKneeL = (float)servos[4].homeAngle; // Left Knee (CH 8) permanently locked at 94°
-  float aFootL = (float)servos[5].homeAngle; // Left Foot (CH 12) permanently locked flat at 94°
+  // Knees and Feet Solidly Locked at Neutral Flat Baselines
+  float aKneeR = (float)servos[1].homeAngle; // Right Knee (CH 1) locked at 8°
+  float aFootR = (float)servos[2].homeAngle; // Right Foot (CH 2) locked at 94°
+  float aKneeL = (float)servos[4].homeAngle; // Left Knee  (CH 8) locked at 94°
+  float aFootL = (float)servos[5].homeAngle; // Left Foot  (CH 12) locked at 94°
 
   // 4. Collision-Free Unipolar Forward Hip Locomotion
-  // Right Hip (CH 1) swings forward (94° -> 99° -> 94°), NEVER backward below 94° (prevents Right Knee bracket collision!)
-  // Left Hip (CH 4) swings forward (94° -> 89° -> 94°), NEVER backward above 94°
-  float rForwardWave = max(0.0f, sinP);  // 0 to 1 during Right leg step
-  float lForwardWave = max(0.0f, -sinP); // 0 to 1 during Left leg step
+  // Right Hip (CH 0) swings forward 94°->99°, NEVER below 94°
+  // Left Hip  (CH 4) swings forward 94°->89°, NEVER above 94°
+  float rForwardWave = max(0.0f, sinP);
+  float lForwardWave = max(0.0f, -sinP);
 
-  float aHipR = (float)servos[1].homeAngle + (rForwardWave * strideAmp * strideDir * currentGaitScale);
+  float aHipR = (float)servos[0].homeAngle + (rForwardWave * strideAmp * strideDir * currentGaitScale);
   float aHipL = (float)servos[3].homeAngle - (lForwardWave * strideAmp * strideDir * currentGaitScale);
 
-  aHipR = constrain(aHipR, 94.0f, 100.0f); // NEVER decreases below 94°! Zero knee bracket collision!
-  aHipL = constrain(aHipL, 88.0f, 94.0f);  // NEVER increases above 94°! Zero knee bracket collision!
+  aHipR = constrain(aHipR, 94.0f, 100.0f);
+  aHipL = constrain(aHipL, 88.0f, 94.0f);
 
   move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
 }
