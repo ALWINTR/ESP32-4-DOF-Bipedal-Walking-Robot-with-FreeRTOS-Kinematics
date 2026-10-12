@@ -59,10 +59,10 @@ bool gaitRunning = false;
 // ==========================================
 const float L1 = 5.0f;        // Thigh link length (cm)
 const float L2 = 5.7f;        // Shin link length (cm)
-float stepHeight = 10.45f;    // Standing vertical height (cm)
-float stepClearance = 0.08f;  // Foot swing lift clearance (cm, ~0.8mm)
-float stepLength = 0.45f;     // Half stride length (cm, ~4.5mm)
-float walkFreq = 0.65f;        // 0.65 Hz calm cadence (1.54s per full cycle)
+float stepHeight = 10.35f;    // Standing vertical height (cm)
+float stepClearance = 0.22f;  // Foot swing lift clearance (cm, ~2.2mm)
+float stepLength = 0.65f;     // Half stride length (cm, ~6.5mm)
+float walkFreq = 0.75f;       // 0.75 Hz calm cadence (1.33s per full cycle)
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
 
@@ -634,20 +634,20 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
       <div class="tuner-grid">
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Cadence (Speed)</span><span class="tuner-val" id="val-freq">0.65 Hz</span></div>
-          <input type="range" class="slider-styled" id="slider-freq" min="4" max="12" value="6.5" step="0.5" oninput="setGaitParam('freq', this.value / 10.0)">
+          <div class="tuner-header"><span class="tuner-label">Cadence (Speed)</span><span class="tuner-val" id="val-freq">0.75 Hz</span></div>
+          <input type="range" class="slider-styled" id="slider-freq" min="4" max="14" value="7.5" step="0.5" oninput="setGaitParam('freq', this.value / 10.0)">
         </div>
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">IK Stride Length</span><span class="tuner-val" id="val-stride">3.5 mm</span></div>
-          <input type="range" class="slider-styled" id="slider-stride" min="0.15" max="0.55" value="0.35" step="0.05" oninput="setGaitParam('stride', this.value)">
+          <div class="tuner-header"><span class="tuner-label">IK Stride Length</span><span class="tuner-val" id="val-stride">6.5 mm</span></div>
+          <input type="range" class="slider-styled" id="slider-stride" min="0.30" max="0.95" value="0.65" step="0.05" oninput="setGaitParam('stride', this.value)">
         </div>
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">IK Foot Clearance</span><span class="tuner-val" id="val-knee">0.8 mm</span></div>
-          <input type="range" class="slider-styled" id="slider-knee" min="0.04" max="0.14" value="0.08" step="0.01" oninput="setGaitParam('knee', this.value)">
+          <div class="tuner-header"><span class="tuner-label">IK Foot Clearance</span><span class="tuner-val" id="val-knee">2.2 mm</span></div>
+          <input type="range" class="slider-styled" id="slider-knee" min="0.10" max="0.35" value="0.22" step="0.02" oninput="setGaitParam('knee', this.value)">
         </div>
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Standing Height Z</span><span class="tuner-val" id="val-ankle">10.45 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ankle" min="10.20" max="10.60" value="10.45" step="0.05" oninput="setGaitParam('ankle', this.value)">
+          <div class="tuner-header"><span class="tuner-label">Standing Height Z</span><span class="tuner-val" id="val-ankle">10.35 cm</span></div>
+          <input type="range" class="slider-styled" id="slider-ankle" min="10.10" max="10.55" value="10.35" step="0.05" oninput="setGaitParam('ankle', this.value)">
         </div>
       </div>
     </section>
@@ -1005,20 +1005,33 @@ void updateHumanLikeWalk() {
 
   float aHipR  = (float)servos[0].homeAngle + (ikR.hipDeg - ikNom.hipDeg);
   float aKneeR = (float)servos[1].homeAngle + (ikR.kneeDeg - ikNom.kneeDeg);
-  float aFootR = (float)servos[2].homeAngle + (ikR.ankleDeg - ikNom.ankleDeg);
 
   float aHipL  = (float)servos[3].homeAngle - (ikL.hipDeg - ikNom.hipDeg);
   float aKneeL = (float)servos[4].homeAngle - (ikL.kneeDeg - ikNom.kneeDeg);
-  float aFootL = (float)servos[5].homeAngle - (ikL.ankleDeg - ikNom.ankleDeg);
+
+  // Dynamic Zero-Collision Foot Trajectories:
+  // - Stance: firm flat 94° ground plane support for maximum bipedal balance
+  // - Swing: gentle micro-flex away from knee (CH 12 forward <= 94°, CH 15 backward >= 94°)
+  float aFootR = (float)servos[2].homeAngle;
+  if (phase < (float)M_PI) {
+    // Right swing: micro-flex forward away from right knee
+    aFootR -= 0.35f * (ikR.kneeDeg - ikNom.kneeDeg);
+  }
+
+  float aFootL = (float)servos[5].homeAngle;
+  if (phase >= (float)M_PI) {
+    // Left swing: micro-flex backward away from left knee
+    aFootL += 0.35f * (ikL.kneeDeg - ikNom.kneeDeg);
+  }
 
   // Strict Physical Safety Constraints (Guarantees zero bracket collisions)
-  aHipR  = constrain(aHipR,  90.0f, 98.5f);
-  aKneeR = constrain(aKneeR,  8.0f, 12.5f); // NEVER exceeds 12.5° -> 100% collision free!
-  aFootR = constrain(aFootR, 94.0f, 96.5f); // NEVER drops below 94.0° -> IMPOSSIBLE to move backward into right knee!
+  aHipR  = constrain(aHipR,  87.0f, 101.0f);
+  aKneeR = constrain(aKneeR,  8.0f,  15.5f); // NEVER exceeds 15.5° -> Zero knee cap collision!
+  aFootR = constrain(aFootR, 91.5f,  94.0f); // NEVER exceeds 94.0° -> IMPOSSIBLE to move backward into right knee!
 
-  aHipL  = constrain(aHipL,  89.5f, 98.0f);
-  aKneeL = constrain(aKneeL, 89.5f, 94.0f); // NEVER drops below 89.5° -> 100% collision free!
-  aFootL = constrain(aFootL, 91.5f, 94.0f); // NEVER exceeds 94.0° -> IMPOSSIBLE to move forward into left knee!
+  aHipL  = constrain(aHipL,  87.0f, 101.0f);
+  aKneeL = constrain(aKneeL, 86.5f,  94.0f); // NEVER drops below 86.5° -> Zero knee cap collision!
+  aFootL = constrain(aFootL, 94.0f,  96.5f); // NEVER drops below 94.0° -> IMPOSSIBLE to move forward into left knee!
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1048,28 +1061,28 @@ void executeJointDiagnostics() {
   parkStand();
   delay(400);
 
-  // 1. Right Hip (CH 0): 94° -> 98.5° -> 94°
-  setServoAngleDirect(0, 98.5f); servos[0].currentAngle = 98.5f; delay(1000);
-  setServoAngleDirect(0, 94.0f); servos[0].currentAngle = 94.0f; delay(500);
+  // 1. Right Hip (CH 0): 94° -> 100.0° -> 94°
+  setServoAngleDirect(0, 100.0f); servos[0].currentAngle = 100.0f; delay(1000);
+  setServoAngleDirect(0, 94.0f);  servos[0].currentAngle = 94.0f;  delay(500);
 
-  // 2. Right Knee (CH 1): 8° -> 11.0° -> 8° (Gentle micro-lift, zero collision)
-  setServoAngleDirect(1, 11.0f); servos[1].currentAngle = 11.0f; delay(1000);
+  // 2. Right Knee (CH 1): 8° -> 14.5° -> 8° (Gentle micro-lift, zero collision)
+  setServoAngleDirect(1, 14.5f); servos[1].currentAngle = 14.5f; delay(1000);
   setServoAngleDirect(1, 8.0f);  servos[1].currentAngle = 8.0f;  delay(500);
 
-  // 3. Right Foot (CH 12): 94° -> 96.0° -> 94° (Gentle forward flex away from right knee)
-  setServoAngleDirect(12, 96.0f); servos[2].currentAngle = 96.0f; delay(1000);
+  // 3. Right Foot (CH 12): 94° -> 92.0° -> 94° (Gentle forward flex away from right knee)
+  setServoAngleDirect(12, 92.0f); servos[2].currentAngle = 92.0f; delay(1000);
   setServoAngleDirect(12, 94.0f); servos[2].currentAngle = 94.0f; delay(500);
 
-  // 4. Left Hip (CH 4): 94° -> 89.5° -> 94°
-  setServoAngleDirect(4, 89.5f); servos[3].currentAngle = 89.5f; delay(1000);
+  // 4. Left Hip (CH 4): 94° -> 88.0° -> 94°
+  setServoAngleDirect(4, 88.0f); servos[3].currentAngle = 88.0f; delay(1000);
   setServoAngleDirect(4, 94.0f); servos[3].currentAngle = 94.0f; delay(500);
 
-  // 5. Left Knee (CH 8): 94° -> 91.0° -> 94° (Gentle micro-lift, zero collision)
-  setServoAngleDirect(8, 91.0f); servos[4].currentAngle = 91.0f; delay(1000);
+  // 5. Left Knee (CH 8): 94° -> 87.5° -> 94° (Gentle micro-lift, zero collision)
+  setServoAngleDirect(8, 87.5f); servos[4].currentAngle = 87.5f; delay(1000);
   setServoAngleDirect(8, 94.0f); servos[4].currentAngle = 94.0f; delay(500);
 
-  // 6. Left Foot (CH 15): 94° -> 92.0° -> 94° (Gentle backward flex away from left knee)
-  setServoAngleDirect(15, 92.0f); servos[5].currentAngle = 92.0f; delay(1000);
+  // 6. Left Foot (CH 15): 94° -> 96.0° -> 94° (Gentle backward flex away from left knee)
+  setServoAngleDirect(15, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
   setServoAngleDirect(15, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
 
   parkStand();
