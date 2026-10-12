@@ -1082,11 +1082,11 @@ void updateHumanLikeWalk() {
 
   // Strict Physical Safety Constraints (Guarantees zero bracket collisions)
   aHipR  = constrain(aHipR,  87.0f, 101.0f);
-  aKneeR = constrain(aKneeR,  8.0f,  15.5f); // NEVER exceeds 15.5° -> Zero knee cap collision!
+  aKneeR = constrain(aKneeR,  7.0f,  17.5f); // Bends smoothly up to ~17.5°, extends to 7° in stance
   aFootR = constrain(aFootR, 93.5f,  95.0f); // Strictly flat 94.0° neutral
 
   aHipL  = constrain(aHipL,  87.0f, 101.0f);
-  aKneeL = constrain(aKneeL, 86.5f,  94.0f); // NEVER drops below 86.5° -> Zero knee cap collision!
+  aKneeL = constrain(aKneeL, 84.5f,  95.0f); // Bends smoothly up to ~84.5°, extends to 95° in stance
   aFootL = constrain(aFootL, 93.5f,  95.0f); // Strictly flat 94.0° neutral
 
   // Apply directly to PWM servo driver
@@ -1158,7 +1158,7 @@ void updateServoPos(float hipDeg, float kneeDeg, float ankleDeg, char leg) {
     float aKnee = (float)servos[4].homeAngle - dK;
     float aFoot = (float)servos[5].homeAngle; // Strictly flat 94° neutral - ZERO collision with left knee!
     aHip = constrain(aHip, 87.0f, 101.0f);
-    aKnee = constrain(aKnee, 86.5f, 94.0f); // Never drops below 86.5° -> Zero knee cap collision
+    aKnee = constrain(aKnee, 84.0f, 95.0f); // Bends smoothly up to ~84°, extends to 95° in stance
     aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
     servos[3].currentAngle = aHip;  setServoAngleDirect(4, aHip);
     servos[4].currentAngle = aKnee; setServoAngleDirect(8, aKnee);
@@ -1168,7 +1168,7 @@ void updateServoPos(float hipDeg, float kneeDeg, float ankleDeg, char leg) {
     float aKnee = (float)servos[1].homeAngle + dK;
     float aFoot = (float)servos[2].homeAngle; // Strictly flat 94° neutral - ZERO collision with right knee!
     aHip = constrain(aHip, 87.0f, 101.0f);
-    aKnee = constrain(aKnee, 8.0f, 15.5f);  // Never exceeds 15.5° -> Zero knee cap collision
+    aKnee = constrain(aKnee, 7.0f, 18.0f);  // Bends smoothly up to ~18°, extends to 7° in stance
     aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
     servos[0].currentAngle = aHip;  setServoAngleDirect(0, aHip);
     servos[1].currentAngle = aKnee; setServoAngleDirect(1, aKnee);
@@ -1202,20 +1202,44 @@ void pos(float x, float z, char leg) {
 }
 
 void takeStep(float sLength, int sVelocity) {
-  float di = max(0.08f, sLength / 8.0f);
-  // Phase 1: Right stance, Left swing
-  for (float i = sLength; i >= -sLength; i -= di) {
+  const int numSteps = 14;
+  
+  // Phase 1: Left Swing forward, Right Stance backward
+  for (int step = 0; step <= numSteps; step++) {
     if (!gaitRunning && activeGaitName != "ref_step") break;
-    pos(i, stepHeight, 'r');
-    pos(-i, stepHeight - stepClearance, 'l');
+    float u = (float)step / (float)numSteps; // 0.0 to 1.0
+    float i = sLength * (1.0f - 2.0f * u);   // +sLength to -sLength
+    
+    // Left Leg Swing: moves from -sLength to +sLength, lifts in smooth sinusoidal arc
+    float xl = -i;
+    float zl = stepHeight - (stepClearance * sin(u * (float)M_PI));
+    pos(xl, zl, 'l');
+
+    // Right Leg Stance: moves from +sLength to -sLength, firm on ground
+    float xr = i;
+    float zr = stepHeight;
+    pos(xr, zr, 'r');
+
     delay(sVelocity);
     server.handleClient();
   }
-  // Phase 2: Right swing, Left stance
-  for (float i = sLength; i >= -sLength; i -= di) {
+
+  // Phase 2: Right Swing forward, Left Stance backward
+  for (int step = 0; step <= numSteps; step++) {
     if (!gaitRunning && activeGaitName != "ref_step") break;
-    pos(-i, stepHeight - stepClearance, 'r');
-    pos(i, stepHeight, 'l');
+    float u = (float)step / (float)numSteps; // 0.0 to 1.0
+    float i = sLength * (1.0f - 2.0f * u);   // +sLength to -sLength
+    
+    // Right Leg Swing: moves from -sLength to +sLength, lifts in smooth sinusoidal arc
+    float xr = -i;
+    float zr = stepHeight - (stepClearance * sin(u * (float)M_PI));
+    pos(xr, zr, 'r');
+
+    // Left Leg Stance: moves from +sLength to -sLength, firm on ground
+    float xl = i;
+    float zl = stepHeight;
+    pos(xl, zl, 'l');
+
     delay(sVelocity);
     server.handleClient();
   }
