@@ -60,6 +60,7 @@ float kneeAmp = 0.0f;         // 0.0° Knees locked solid at baseline (CH1=8°, 
 float walkFreq = 0.75f;       // 0.75 Hz calm, stable cadence
 float strideDir = 1.0f;       // 1.0 = forward, -1.0 = backward
 float turnFactor = 0.0f;      // 0.0 = straight, +1.0 = turn left, -1.0 = turn right
+float leftHipInvert = 1.0f;   // 1.0 = normal (+ forward), -1.0 = inverted (- forward)
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup/stop ramp
 unsigned long walkStartTime = 0;
 
@@ -280,6 +281,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="servo-header"><span class="servo-name">Walk Cadence (Speed)</span><span class="angle-display" id="val-freq">0.75 Hz</span></div>
           <div class="slider-box"><input type="range" id="slider-freq" min="4" max="15" value="7" oninput="setGaitParam('freq', this.value / 10.0)"></div>
         </div>
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Left Hip Dir</span><span class="angle-display" id="val-linv">Normal (+)</span></div>
+          <button class="btn" style="padding: 4px; font-size: 0.72rem; width: 100%; border-color: var(--accent);" onclick="toggleLeftHipInv()">Toggle Invert</button>
+        </div>
       </div>
     </section>
 
@@ -418,6 +423,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       sendCmd('/set_gait_param?param=' + param + '&val=' + val);
     }
 
+    let leftHipInv = 1.0;
+    function toggleLeftHipInv() {
+      leftHipInv = (leftHipInv === 1.0) ? -1.0 : 1.0;
+      document.getElementById('val-linv').innerText = (leftHipInv === 1.0) ? 'Normal (+)' : 'Inverted (-)';
+      sendCmd('/set_gait_param?param=l_inv&val=' + leftHipInv);
+    }
+
     function saveOffsets() {
       sendCmd('/save_offsets');
       alert('All 6 Joint Angles Saved Permanently to ESP32 Flash Memory!');
@@ -522,7 +534,7 @@ void move6Joints(float hr, float kr, float fr, float hl, float kl, float fl) {
   servos[5].currentAngle = fl; setServoAngleDirect(12, fl); // CH 12 Left Foot (94°)
 }
 
-// Advanced Anti-Shake & Soft-Landing Walking Engine
+// Advanced Dynamic 6-DOF Bipedal Walking Engine
 void updateWeightShiftWalk() {
   float t = (float)(millis() - walkStartTime) / 1000.0f;
 
@@ -537,33 +549,40 @@ void updateWeightShiftWalk() {
   float sinP = sin(phase);
   float cosP = cos(phase);
 
-  // 2. Anti-Shake S-Curve Harmonic Wave for Ankle Roll (soft lateral weight shifting)
+  // 2. Anti-Shake S-Curve Harmonic Wave for Ankle Roll (lateral weight shifting)
   float rollWave = sinP * (1.0f - 0.18f * cos(2.0f * phase));
   float effectiveRoll = rollWave * rollTilt * currentGaitScale;
 
-  // 3. Smooth Air-to-Ground Soft Landing Knee Trajectory (zero impact landing)
-  float rawRLift = max(0.0f, sinP);
-  float rawLLift = max(0.0f, -sinP);
-  float rLift = pow(rawRLift, 1.8f);
-  float lLift = pow(rawLLift, 1.8f);
+  // 3. Dynamic Stance & Weight-Shift Feet Trajectory
+  // When effectiveRoll is applied, both feet tilt to shift Center of Mass laterally.
+  // This smoothly lifts the unloaded swing foot off the ground so it swings with zero drag.
+  float aFootR = (float)servos[2].homeAngle + effectiveRoll;
+  float aFootL = (float)servos[5].homeAngle + effectiveRoll;
+  aFootR = constrain(aFootR, (float)servos[2].homeAngle - 8.0f, (float)servos[2].homeAngle + 8.0f);
+  aFootL = constrain(aFootL, (float)servos[5].homeAngle - 8.0f, (float)servos[5].homeAngle + 8.0f);
 
-  // Knees and Feet Solidly Locked at Neutral Flat Baselines
+  // 4. Knees Solidly Locked at Calibrated Baselines (zero knee-foot collision)
   float aKneeR = (float)servos[1].homeAngle; // Right Knee (CH 1) locked at 8°
-  float aFootR = (float)servos[2].homeAngle; // Right Foot (CH 2) locked at 94°
   float aKneeL = (float)servos[4].homeAngle; // Left Knee  (CH 8) locked at 94°
-  float aFootL = (float)servos[5].homeAngle; // Left Foot  (CH 12) locked at 94°
 
-  // 4. Collision-Free Unipolar Forward Hip Locomotion
-  // Right Hip (CH 0) swings forward 94°->99°, NEVER below 94°
-  // Left Hip  (CH 4) swings forward 94°->89°, NEVER above 94°
-  float rForwardWave = max(0.0f, sinP);
-  float lForwardWave = max(0.0f, -sinP);
+  // 5. Dynamic Symmetrical Hip Stride (Anti-Phase Forward Swing)
+  // When robot rolls Right (sinP > 0), Left Leg is unweighted and swings forward!
+  // When robot rolls Left (sinP < 0), Right Leg is unweighted and swings forward!
+  float lSwingWave = max(0.0f, sinP);  // 0 to 1 during Left leg swing phase
+  float rSwingWave = max(0.0f, -sinP); // 0 to 1 during Right leg swing phase
 
-  float aHipR = (float)servos[0].homeAngle + (rForwardWave * strideAmp * strideDir * currentGaitScale);
-  float aHipL = (float)servos[3].homeAngle - (lForwardWave * strideAmp * strideDir * currentGaitScale);
+  // Micro stance push (1.5°) provides forward ground propulsion while the other leg swings
+  float rPush = lSwingWave * 1.5f;
+  float lPush = rSwingWave * 1.5f;
 
-  aHipR = constrain(aHipR, 94.0f, 100.0f);
-  aHipL = constrain(aHipL, 88.0f, 94.0f);
+  float rEffStride = (strideAmp + turnFactor * 2.0f) * strideDir * currentGaitScale;
+  float lEffStride = (strideAmp - turnFactor * 2.0f) * strideDir * currentGaitScale;
+
+  float aHipR = (float)servos[0].homeAngle + (rSwingWave * rEffStride) - (rPush * strideDir * currentGaitScale);
+  float aHipL = (float)servos[3].homeAngle + (leftHipInvert * (lSwingWave * lEffStride) - (lPush * strideDir * currentGaitScale));
+
+  aHipR = constrain(aHipR, 90.0f, 104.0f);
+  aHipL = constrain(aHipL, 84.0f, 104.0f);
 
   move6Joints(aHipR, aKneeR, aFootR, aHipL, aKneeL, aFootL);
 }
@@ -702,6 +721,7 @@ void handleSetGaitParam() {
   else if (param == "stride") strideAmp = val;
   else if (param == "knee") kneeAmp = val;
   else if (param == "freq") walkFreq = val;
+  else if (param == "l_inv") leftHipInvert = val;
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
