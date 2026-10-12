@@ -1076,29 +1076,18 @@ void updateHumanLikeWalk() {
   float aHipL  = (float)servos[3].homeAngle - (ikL.hipDeg - ikNom.hipDeg);
   float aKneeL = (float)servos[4].homeAngle - (ikL.kneeDeg - ikNom.kneeDeg);
 
-  // Dynamic Zero-Collision Foot Trajectories:
-  // - Stance: firm flat 94° ground plane support for maximum bipedal balance
-  // - Swing: gentle micro-flex away from knee (CH 12 forward <= 94°, CH 15 backward >= 94°)
-  float aFootR = (float)servos[2].homeAngle;
-  if (phase < (float)M_PI) {
-    // Right swing: micro-flex forward away from right knee
-    aFootR -= 0.35f * (ikR.kneeDeg - ikNom.kneeDeg);
-  }
-
-  float aFootL = (float)servos[5].homeAngle;
-  if (phase >= (float)M_PI) {
-    // Left swing: micro-flex backward away from left knee
-    aFootL += 0.35f * (ikL.kneeDeg - ikNom.kneeDeg);
-  }
+  // Both feet strictly locked to flat 94° neutral support - guarantees ZERO bracket collisions
+  float aFootR = (float)servos[2].homeAngle; // 94.0° flat ground plane
+  float aFootL = (float)servos[5].homeAngle; // 94.0° flat ground plane
 
   // Strict Physical Safety Constraints (Guarantees zero bracket collisions)
   aHipR  = constrain(aHipR,  87.0f, 101.0f);
   aKneeR = constrain(aKneeR,  8.0f,  15.5f); // NEVER exceeds 15.5° -> Zero knee cap collision!
-  aFootR = constrain(aFootR, 91.5f,  94.0f); // NEVER exceeds 94.0° -> IMPOSSIBLE to move backward into right knee!
+  aFootR = constrain(aFootR, 93.5f,  95.0f); // Strictly flat 94.0° neutral
 
   aHipL  = constrain(aHipL,  87.0f, 101.0f);
   aKneeL = constrain(aKneeL, 86.5f,  94.0f); // NEVER drops below 86.5° -> Zero knee cap collision!
-  aFootL = constrain(aFootL, 94.0f,  96.5f); // NEVER drops below 94.0° -> IMPOSSIBLE to move forward into left knee!
+  aFootL = constrain(aFootL, 93.5f,  95.0f); // Strictly flat 94.0° neutral
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1167,26 +1156,20 @@ void updateServoPos(float hipDeg, float kneeDeg, float ankleDeg, char leg) {
   if (leg == 'l') {
     float aHip = (float)servos[3].homeAngle - dH;
     float aKnee = (float)servos[4].homeAngle - dK;
-    float aFoot = (float)servos[5].homeAngle;
-    if (dK > 0.5f) {
-      aFoot += 0.35f * dK;
-    }
+    float aFoot = (float)servos[5].homeAngle; // Strictly flat 94° neutral - ZERO collision with left knee!
     aHip = constrain(aHip, 87.0f, 101.0f);
     aKnee = constrain(aKnee, 86.5f, 94.0f); // Never drops below 86.5° -> Zero knee cap collision
-    aFoot = constrain(aFoot, 94.0f, 96.5f); // Never drops below 94.0° -> Zero foot collision
+    aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
     servos[3].currentAngle = aHip;  setServoAngleDirect(4, aHip);
     servos[4].currentAngle = aKnee; setServoAngleDirect(8, aKnee);
     servos[5].currentAngle = aFoot; setServoAngleDirect(15, aFoot);
   } else if (leg == 'r') {
     float aHip = (float)servos[0].homeAngle + dH;
     float aKnee = (float)servos[1].homeAngle + dK;
-    float aFoot = (float)servos[2].homeAngle;
-    if (dK > 0.5f) {
-      aFoot -= 0.35f * dK;
-    }
+    float aFoot = (float)servos[2].homeAngle; // Strictly flat 94° neutral - ZERO collision with right knee!
     aHip = constrain(aHip, 87.0f, 101.0f);
     aKnee = constrain(aKnee, 8.0f, 15.5f);  // Never exceeds 15.5° -> Zero knee cap collision
-    aFoot = constrain(aFoot, 91.5f, 94.0f); // Never exceeds 94.0° -> Zero foot collision
+    aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
     servos[0].currentAngle = aHip;  setServoAngleDirect(0, aHip);
     servos[1].currentAngle = aKnee; setServoAngleDirect(1, aKnee);
     servos[2].currentAngle = aFoot; setServoAngleDirect(12, aFoot);
