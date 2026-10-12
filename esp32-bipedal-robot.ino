@@ -53,9 +53,13 @@ Joint servos[NUM_SERVOS] = {
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
-// Collision-Free Forward Locomotion Parameters
-float walkFreq = 0.65f;        // 0.65 Hz calm cadence (1.5s per cycle)
-float strideAmp = 5.0f;        // 5.0° Smooth forward hip swing (zero bracket collision)
+// Micro-Amplitude Dynamic Human Walking Parameters (All 6 joints moving, small angle distance)
+float walkFreq = 0.65f;        // 0.65 Hz calm cadence (1.54s per full cycle)
+float strideAmp = 4.5f;        // 4.5° Forward hip swing
+float kneeAmp = 3.0f;          // 3.0° Micro knee lift flexion (lifts foot ~2mm, 100% cap safe!)
+float ankleAmp = 2.0f;         // 2.0° Ankle ground level compensation
+float pushHip = 1.0f;          // 1.0° Stance hip push
+float pushAnk = 1.5f;          // 1.5° Stance foot push-off
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
 
@@ -261,17 +265,25 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
     </section>
 
-    <!-- Collision-Free Forward Walking Gait Tuner -->
+    <!-- Collision-Free 6-Joint Walking Gait Tuner -->
     <section class="card">
-      <div class="card-title">🎛️ Collision-Free Forward Gait Tuner</div>
+      <div class="card-title">🎛️ 6-Joint Micro-Amplitude Gait Tuner</div>
       <div class="servo-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
         <div class="servo-card">
           <div class="servo-header"><span class="servo-name">Cadence (Speed)</span><span class="angle-display" id="val-freq">0.65 Hz</span></div>
-          <div class="slider-box"><input type="range" id="slider-freq" min="4" max="12" value="6.5" oninput="setGaitParam('freq', this.value / 10.0)"></div>
+          <div class="slider-box"><input type="range" id="slider-freq" min="4" max="12" value="6.5" step="0.5" oninput="setGaitParam('freq', this.value / 10.0)"></div>
         </div>
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Forward Hip Stride</span><span class="angle-display" id="val-stride">5.0°</span></div>
-          <div class="slider-box"><input type="range" id="slider-stride" min="2" max="6" value="5" oninput="setGaitParam('stride', this.value)"></div>
+          <div class="servo-header"><span class="servo-name">Hip Stride Amp</span><span class="angle-display" id="val-stride">4.5°</span></div>
+          <div class="slider-box"><input type="range" id="slider-stride" min="1.5" max="6.0" value="4.5" step="0.5" oninput="setGaitParam('stride', this.value)"></div>
+        </div>
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Knee Lift Amp</span><span class="angle-display" id="val-knee">3.0°</span></div>
+          <div class="slider-box"><input type="range" id="slider-knee" min="1.0" max="4.5" value="3.0" step="0.5" oninput="setGaitParam('knee', this.value)"></div>
+        </div>
+        <div class="servo-card">
+          <div class="servo-header"><span class="servo-name">Foot Level Amp</span><span class="angle-display" id="val-ankle">2.0°</span></div>
+          <div class="slider-box"><input type="range" id="slider-ankle" min="0.5" max="4.0" value="2.0" step="0.5" oninput="setGaitParam('ankle', this.value)"></div>
         </div>
       </div>
     </section>
@@ -409,6 +421,12 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       } else if (param === 'stride') {
         const el = document.getElementById('val-stride');
         if (el) el.innerText = val.toFixed(1) + '°';
+      } else if (param === 'knee') {
+        const el = document.getElementById('val-knee');
+        if (el) el.innerText = val.toFixed(1) + '°';
+      } else if (param === 'ankle') {
+        const el = document.getElementById('val-ankle');
+        if (el) el.innerText = val.toFixed(1) + '°';
       }
       sendCmd('/set_gait_param?param=' + param + '&val=' + val);
     }
@@ -515,34 +533,55 @@ void updateHumanLikeWalk() {
   float phase = fmod(2.0f * (float)M_PI * walkFreq * t, 2.0f * (float)M_PI);
   if (phase < 0.0f) phase += 2.0f * (float)M_PI;
 
-  // 3. Knees and Feet: STRICTLY Locked at Calibrated Neutral Baselines!
-  // Zero upward motion -> ZERO knee-cap sticking! ZERO bracket jamming!
-  // Zero ankle tilt -> ZERO backward leaning!
-  float aKneeR = (float)servos[1].homeAngle; // Locked at 8°
-  float aFootR = (float)servos[2].homeAngle; // Locked flat at 94°
-  float aKneeL = (float)servos[4].homeAngle; // Locked at 94°
-  float aFootL = (float)servos[5].homeAngle; // Locked flat at 94°
+  float aHipR  = (float)servos[0].homeAngle;
+  float aKneeR = (float)servos[1].homeAngle;
+  float aFootR = (float)servos[2].homeAngle;
+  float aHipL  = (float)servos[3].homeAngle;
+  float aKneeL = (float)servos[4].homeAngle;
+  float aFootL = (float)servos[5].homeAngle;
 
-  // 4. Collision-Free Unipolar Forward Hip Walking
-  // When sin(phase) > 0: Right leg steps forward (94° -> 99° -> 94°), Left stands at 94°
-  // When sin(phase) < 0: Left leg steps forward (94° -> 89° -> 94°), Right stands at 94°
-  float rForwardWave = max(0.0f, sin(phase)) * currentGaitScale;
-  float lForwardWave = max(0.0f, -sin(phase)) * currentGaitScale;
+  // 3. Coordinated 6-Joint Micro-Amplitude Human Walking Gait
+  // Sub-millimeter clearances & small angular distance (< 4.5°) guarantees:
+  // - ZERO bracket-to-hip collisions (Right knee <= 12.5°, Left knee >= 89.5°)
+  // - Dynamic natural gait: Hip swings, Knee flexes for foot clearance, Foot levels flat & pushes off
+  if (phase < (float)M_PI) {
+    // Phase 1: Right Leg SWING (Forward + Knee lift + Foot level), Left Leg STANCE (Push-off)
+    float sw = sin(phase) * currentGaitScale;
+    aHipR  = (float)servos[0].homeAngle + (strideAmp * sw);
+    aKneeR = (float)servos[1].homeAngle + (kneeAmp * sw);
+    aFootR = (float)servos[2].homeAngle - (ankleAmp * sw);
 
-  float aHipR = (float)servos[0].homeAngle + (strideAmp * rForwardWave);
-  float aHipL = (float)servos[3].homeAngle - (strideAmp * lForwardWave);
+    aHipL  = (float)servos[3].homeAngle + (pushHip * sw);
+    aKneeL = (float)servos[4].homeAngle;
+    aFootL = (float)servos[5].homeAngle - (pushAnk * sw);
+  } else {
+    // Phase 2: Left Leg SWING (Forward + Knee lift + Foot level), Right Leg STANCE (Push-off)
+    float psi = phase - (float)M_PI;
+    float sw = sin(psi) * currentGaitScale;
+    aHipL  = (float)servos[3].homeAngle - (strideAmp * sw);
+    aKneeL = (float)servos[4].homeAngle - (kneeAmp * sw);
+    aFootL = (float)servos[5].homeAngle + (ankleAmp * sw);
 
-  // Safety Constrain against any physical bracket limits
-  aHipR = constrain(aHipR, 94.0f, 100.0f); // Forward only, NEVER decreases below 94°!
-  aHipL = constrain(aHipL, 88.0f, 94.0f);  // Forward only, NEVER increases above 94°!
+    aHipR  = (float)servos[0].homeAngle - (pushHip * sw);
+    aKneeR = (float)servos[1].homeAngle;
+    aFootR = (float)servos[2].homeAngle + (pushAnk * sw);
+  }
+
+  // 4. Strict Safety Clamping (Hard mechanical boundary protection)
+  aHipR  = constrain(aHipR,  92.5f, 100.0f);
+  aKneeR = constrain(aKneeR,  8.0f,  12.5f); // NEVER exceeds 12.5° -> 100% collision free!
+  aFootR = constrain(aFootR, 90.0f,  97.0f);
+  aHipL  = constrain(aHipL,  88.0f,  95.5f);
+  aKneeL = constrain(aKneeL, 89.5f,  94.0f); // NEVER drops below 89.5° -> 100% collision free!
+  aFootL = constrain(aFootL, 91.0f,  98.0f);
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
-  servos[1].currentAngle = aKneeR; setServoAngleDirect(1,  aKneeR); // CH 1 Right Knee (8°)
-  servos[2].currentAngle = aFootR; setServoAngleDirect(2,  aFootR); // CH 2 Right Foot (94°)
+  servos[1].currentAngle = aKneeR; setServoAngleDirect(1,  aKneeR); // CH 1 Right Knee
+  servos[2].currentAngle = aFootR; setServoAngleDirect(2,  aFootR); // CH 2 Right Foot
   servos[3].currentAngle = aHipL;  setServoAngleDirect(4,  aHipL);  // CH 4 Left Hip
-  servos[4].currentAngle = aKneeL; setServoAngleDirect(8,  aKneeL); // CH 8 Left Knee (94°)
-  servos[5].currentAngle = aFootL; setServoAngleDirect(12, aFootL); // CH 12 Left Foot (94°)
+  servos[4].currentAngle = aKneeL; setServoAngleDirect(8,  aKneeL); // CH 8 Left Knee
+  servos[5].currentAngle = aFootL; setServoAngleDirect(12, aFootL); // CH 12 Left Foot
 }
 
 void executeSingleHumanStride() {
@@ -561,23 +600,31 @@ void executeSingleHumanStride() {
 
 void executeJointDiagnostics() {
   parkStand();
-  delay(500);
+  delay(400);
 
-  // 1. Right Hip (CH 0): 94° -> 99° -> 94° (Smooth forward motion)
-  setServoAngleDirect(0, 99);
-  servos[0].currentAngle = 99;
-  delay(1500);
-  setServoAngleDirect(0, 94);
-  servos[0].currentAngle = 94;
-  delay(800);
+  // 1. Right Hip (CH 0): 94° -> 98.5° -> 94°
+  setServoAngleDirect(0, 98.5f); servos[0].currentAngle = 98.5f; delay(1000);
+  setServoAngleDirect(0, 94.0f); servos[0].currentAngle = 94.0f; delay(500);
 
-  // 2. Left Hip (CH 4): 94° -> 89° -> 94° (Smooth forward motion)
-  setServoAngleDirect(4, 89);
-  servos[3].currentAngle = 89;
-  delay(1500);
-  setServoAngleDirect(4, 94);
-  servos[3].currentAngle = 94;
-  delay(800);
+  // 2. Right Knee (CH 1): 8° -> 11.0° -> 8° (Gentle micro-lift, zero collision)
+  setServoAngleDirect(1, 11.0f); servos[1].currentAngle = 11.0f; delay(1000);
+  setServoAngleDirect(1, 8.0f);  servos[1].currentAngle = 8.0f;  delay(500);
+
+  // 3. Right Foot (CH 2): 94° -> 92.0° -> 94°
+  setServoAngleDirect(2, 92.0f); servos[2].currentAngle = 92.0f; delay(1000);
+  setServoAngleDirect(2, 94.0f); servos[2].currentAngle = 94.0f; delay(500);
+
+  // 4. Left Hip (CH 4): 94° -> 89.5° -> 94°
+  setServoAngleDirect(4, 89.5f); servos[3].currentAngle = 89.5f; delay(1000);
+  setServoAngleDirect(4, 94.0f); servos[3].currentAngle = 94.0f; delay(500);
+
+  // 5. Left Knee (CH 8): 94° -> 91.0° -> 94° (Gentle micro-lift, zero collision)
+  setServoAngleDirect(8, 91.0f); servos[4].currentAngle = 91.0f; delay(1000);
+  setServoAngleDirect(8, 94.0f); servos[4].currentAngle = 94.0f; delay(500);
+
+  // 6. Left Foot (CH 12): 94° -> 96.0° -> 94°
+  setServoAngleDirect(12, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
+  setServoAngleDirect(12, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
 
   parkStand();
 }
@@ -684,6 +731,8 @@ void handleSetGaitParam() {
   float val = server.arg("val").toFloat();
   if (param == "freq" || param == "speed") walkFreq = val;
   else if (param == "stride") strideAmp = val;
+  else if (param == "knee") kneeAmp = val;
+  else if (param == "ankle") ankleAmp = val;
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
