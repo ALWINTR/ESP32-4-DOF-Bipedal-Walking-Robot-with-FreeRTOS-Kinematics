@@ -53,13 +53,13 @@ Joint servos[NUM_SERVOS] = {
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
-// Sagittal Kinematic Link Lengths & Gait Parameters (from user reference code)
-const float l1 = 5.35f;
-const float l2 = 5.35f;
-float stepHeight = 10.4f;       // Standing/walking height (cm)
-float stepClearance = 0.25f;    // Swing clearance micro-lift (cm) - zero knee collision
-float stepLength = 0.5f;        // Small walking stride (cm)
-int stepVelocity = 10;          // Smooth interpolation delay (ms)
+// Human-Like Dynamic Locomotion Parameters
+float walkFreq = 0.70f;        // 0.70 Hz calm human cadence (1.4s per full cycle, 0.7s per step)
+float rollTilt = 3.5f;        // 3.5° Gentle lateral weight shift (unweights swing foot)
+float strideAmp = 5.0f;       // 5.0° Small, smooth forward hip stride (glides forward)
+float leftHipInvert = 1.0f;   // 1.0 = normal (+ forward), -1.0 = inverted (- forward)
+float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
+unsigned long walkStartTime = 0;
 
 void loadSavedOffsets() {
   preferences.begin("biped_chmap", false);
@@ -262,25 +262,25 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
     </section>
 
-    <!-- Micro Walking Gait Tuner -->
+    <!-- Human-Like Walking Gait Tuner -->
     <section class="card">
-      <div class="card-title">🎛️ Inverse Kinematics (IK) Gait Tuner (Reference Kinematics)</div>
+      <div class="card-title">🎛️ Human-Like Dynamic Walking Tuner</div>
       <div class="servo-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Step Length (cm)</span><span class="angle-display" id="val-len">0.50 cm</span></div>
-          <div class="slider-box"><input type="range" id="slider-len" min="2" max="12" value="5" oninput="setGaitParam('length', this.value / 10.0)"></div>
+          <div class="servo-header"><span class="servo-name">Walk Speed (Cadence)</span><span class="angle-display" id="val-freq">0.70 Hz</span></div>
+          <div class="slider-box"><input type="range" id="slider-freq" min="4" max="12" value="7" oninput="setGaitParam('freq', this.value / 10.0)"></div>
         </div>
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Step Clearance (cm)</span><span class="angle-display" id="val-clr">0.25 cm</span></div>
-          <div class="slider-box"><input type="range" id="slider-clr" min="10" max="60" value="25" oninput="setGaitParam('clearance', this.value / 100.0)"></div>
+          <div class="servo-header"><span class="servo-name">Forward Stride (Hip)</span><span class="angle-display" id="val-stride">5.0°</span></div>
+          <div class="slider-box"><input type="range" id="slider-stride" min="2" max="8" value="5" oninput="setGaitParam('stride', this.value)"></div>
         </div>
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Step Height (cm)</span><span class="angle-display" id="val-hgt">10.40 cm</span></div>
-          <div class="slider-box"><input type="range" id="slider-hgt" min="98" max="106" value="104" oninput="setGaitParam('height', this.value / 10.0)"></div>
+          <div class="servo-header"><span class="servo-name">Weight-Shift Roll</span><span class="angle-display" id="val-tilt">3.5°</span></div>
+          <div class="slider-box"><input type="range" id="slider-tilt" min="20" max="60" value="35" oninput="setGaitParam('tilt', this.value / 10.0)"></div>
         </div>
         <div class="servo-card">
-          <div class="servo-header"><span class="servo-name">Step Delay (ms)</span><span class="angle-display" id="val-vel">10 ms</span></div>
-          <div class="slider-box"><input type="range" id="slider-vel" min="4" max="25" value="10" oninput="setGaitParam('velocity', this.value)"></div>
+          <div class="servo-header"><span class="servo-name">Left Hip Dir</span><span class="angle-display" id="val-linv">Normal (+)</span></div>
+          <button class="btn" style="padding: 4px; font-size: 0.72rem; width: 100%; border-color: var(--accent);" onclick="toggleLeftHipInv()">Toggle Invert</button>
         </div>
       </div>
     </section>
@@ -412,16 +412,21 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     function setGaitParam(param, val) {
       val = parseFloat(val);
-      if (param === 'velocity') {
-        document.getElementById('val-vel').innerText = parseInt(val) + ' ms';
-      } else if (param === 'length') {
-        document.getElementById('val-len').innerText = val.toFixed(2) + ' cm';
-      } else if (param === 'clearance') {
-        document.getElementById('val-clr').innerText = val.toFixed(2) + ' cm';
-      } else if (param === 'height') {
-        document.getElementById('val-hgt').innerText = val.toFixed(2) + ' cm';
+      if (param === 'freq') {
+        document.getElementById('val-freq').innerText = val.toFixed(2) + ' Hz';
+      } else if (param === 'stride') {
+        document.getElementById('val-stride').innerText = val.toFixed(1) + '°';
+      } else if (param === 'tilt') {
+        document.getElementById('val-tilt').innerText = val.toFixed(1) + '°';
       }
       sendCmd('/set_gait_param?param=' + param + '&val=' + val);
+    }
+
+    let leftHipInv = 1.0;
+    function toggleLeftHipInv() {
+      leftHipInv = (leftHipInv === 1.0) ? -1.0 : 1.0;
+      document.getElementById('val-linv').innerText = (leftHipInv === 1.0) ? 'Normal (+)' : 'Inverted (-)';
+      sendCmd('/set_gait_param?param=l_inv&val=' + leftHipInv);
     }
 
     function saveOffsets() {
@@ -500,102 +505,81 @@ void setServoAngleDirect(int channel, float angle) {
 }
 
 // ==========================================
-// 4. Inverse Kinematics (IK) Engine & Motion Driver
-// (Directly modeled on User Reference Kinematics)
+// 4. Human-Like Dynamic Locomotion Engine
 // ==========================================
-void updateServoPos(float target1, float target2, float target3, char leg) {
-  if (leg == 'l') {
-    // Left leg: CH 4 Hip, CH 8 Knee, CH 12 Foot
-    float hipL = (float)servos[3].homeAngle - target1;
-    float kneeL = (float)servos[4].homeAngle - target2;
-    float ankleL = (float)servos[5].homeAngle - (target3 - 90.0f);
-
-    hipL = constrain(hipL, 0.0f, 180.0f);
-    kneeL = constrain(kneeL, 0.0f, 180.0f);
-    ankleL = constrain(ankleL, 0.0f, 180.0f);
-
-    servos[3].currentAngle = hipL; setServoAngleDirect(4, hipL); // CH 4 Left Hip
-    servos[4].currentAngle = kneeL; setServoAngleDirect(8, kneeL); // CH 8 Left Knee
-    servos[5].currentAngle = ankleL; setServoAngleDirect(12, ankleL); // CH 12 Left Foot
-  } else if (leg == 'r') {
-    // Right leg: CH 0 Hip, CH 1 Knee, CH 2 Foot
-    float hipR = (float)servos[0].homeAngle + target1;
-    float kneeR = (float)servos[1].homeAngle + target2;
-    float ankleR = (float)servos[2].homeAngle + (target3 - 90.0f);
-
-    hipR = constrain(hipR, 0.0f, 180.0f);
-    kneeR = constrain(kneeR, 0.0f, 180.0f);
-    ankleR = constrain(ankleR, 0.0f, 180.0f);
-
-    servos[0].currentAngle = hipR; setServoAngleDirect(0, hipR); // CH 0 Right Hip
-    servos[1].currentAngle = kneeR; setServoAngleDirect(1, kneeR); // CH 1 Right Knee
-    servos[2].currentAngle = ankleR; setServoAngleDirect(2, ankleR); // CH 2 Right Foot
-  }
-}
-
-void pos(float x, float z, char leg) {
-  if (z <= 0.01f) z = 0.01f;
-  float hipRad2 = atan(x / z);
-  float hipDeg2 = hipRad2 * (180.0f / (float)M_PI);
-
-  float z2 = z / cos(hipRad2);
-
-  float val1 = (sq(l1) + sq(z2) - sq(l2)) / (2.0f * l1 * z2);
-  val1 = constrain(val1, -1.0f, 1.0f);
-  float hipRad1 = acos(val1);
-  float hipDeg1 = hipRad1 * (180.0f / (float)M_PI);
-
-  float val2 = (sq(l1) + sq(l2) - sq(z2)) / (2.0f * l1 * l2);
-  val2 = constrain(val2, -1.0f, 1.0f);
-  float kneeRad = (float)M_PI - acos(val2);
-
-  float val3 = (sq(l2) + sq(z2) - sq(l1)) / (2.0f * l2 * z2);
-  val3 = constrain(val3, -1.0f, 1.0f);
-  float ankleRad = ((float)M_PI / 2.0f) + hipRad2 - acos(val3);
-
-  float hipDeg = hipDeg1 + hipDeg2;
-  float kneeDeg = kneeRad * (180.0f / (float)M_PI);
-  float ankleDeg = ankleRad * (180.0f / (float)M_PI);
-
-  updateServoPos(hipDeg, kneeDeg, ankleDeg, leg);
-}
-
 void parkStand() {
   gaitRunning = false;
   activeGaitName = "stand";
+  currentGaitScale = 0.0f;
   for (int i = 0; i < NUM_SERVOS; i++) {
     servos[i].currentAngle = (float)servos[i].homeAngle;
     setServoAngleDirect(servos[i].channel, (float)servos[i].homeAngle);
   }
 }
 
-void initializeIK() {
-  for (float i = 10.7f; i >= stepHeight; i -= 0.03f) {
-    pos(0.0f, i, 'l');
-    pos(0.0f, i, 'r');
-    delay(10);
-    server.handleClient();
+void updateHumanLikeWalk() {
+  float t = (float)(millis() - walkStartTime) / 1000.0f;
+
+  // 1. Smooth Anti-Jerk Envelope (eases gently into motion over 0.8s)
+  if (gaitRunning) {
+    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.025f);
+  } else {
+    if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.05f);
   }
+
+  // 2. Harmonious Human Walking Phase
+  float phase = 2.0f * (float)M_PI * walkFreq * t;
+  float sinP = sin(phase);
+
+  // 3. Lateral Weight Transfer (Ankle Roll)
+  // Shifts Center of Mass onto the stance foot so the swing foot unweights without high knee lifts!
+  float effectiveRoll = sinP * rollTilt * currentGaitScale;
+
+  float aFootR = (float)servos[2].homeAngle + effectiveRoll;
+  float aFootL = (float)servos[5].homeAngle + effectiveRoll;
+  aFootR = constrain(aFootR, (float)servos[2].homeAngle - 7.0f, (float)servos[2].homeAngle + 7.0f);
+  aFootL = constrain(aFootL, (float)servos[5].homeAngle - 7.0f, (float)servos[5].homeAngle + 7.0f);
+
+  // 4. Knees: Solidly Flat at Calibrated Neutral Baselines
+  // Right Knee is 8°, Left Knee is 94°.
+  // Knees NEVER bend high upwards into the air! 100% collision-free.
+  float aKneeR = (float)servos[1].homeAngle;
+  float aKneeL = (float)servos[4].homeAngle;
+
+  // 5. Symmetrical Alternating Forward Hip Stride
+  // When robot tilts Right (sinP > 0): Left foot is in the air -> Left Hip glides forward!
+  // When robot tilts Left (sinP < 0): Right foot is in the air -> Right Hip glides forward!
+  float lSwing = max(0.0f, sinP);  // 0 to 1 during Left leg swing phase
+  float rSwing = max(0.0f, -sinP); // 0 to 1 during Right leg swing phase
+
+  // Micro stance push (1.0°) propels the body forward while the swing leg glides forward
+  float aHipR = (float)servos[0].homeAngle + (rSwing * strideAmp * currentGaitScale) - (lSwing * 1.0f * currentGaitScale);
+  float aHipL = (float)servos[3].homeAngle + leftHipInvert * ((lSwing * strideAmp * currentGaitScale) - (rSwing * 1.0f * currentGaitScale));
+
+  aHipR = constrain(aHipR, 91.0f, 102.0f);
+  aHipL = constrain(aHipL, 86.0f, 102.0f);
+
+  // Apply to all 6 servos
+  servos[0].currentAngle = aHipR;  setServoAngleDirect(0, aHipR);   // CH 0 Right Hip
+  servos[1].currentAngle = aKneeR; setServoAngleDirect(1, aKneeR);  // CH 1 Right Knee (8°)
+  servos[2].currentAngle = aFootR; setServoAngleDirect(2, aFootR);  // CH 2 Right Foot
+  servos[3].currentAngle = aHipL;  setServoAngleDirect(4, aHipL);   // CH 4 Left Hip
+  servos[4].currentAngle = aKneeL; setServoAngleDirect(8, aKneeL);  // CH 8 Left Knee (94°)
+  servos[5].currentAngle = aFootL; setServoAngleDirect(12, aFootL); // CH 12 Left Foot
 }
 
-void takeStep(float sLength, int sVelocity) {
-  float stepIncrement = 0.05f;
-
-  for (float i = sLength; i >= -sLength; i -= stepIncrement) {
-    if (!gaitRunning && activeGaitName != "step") return;
-    pos(i, stepHeight, 'r');
-    pos(-i, stepHeight - stepClearance, 'l');
-    delay(sVelocity);
+void executeSingleHumanStride() {
+  gaitRunning = true;
+  activeGaitName = "step";
+  unsigned long t0 = millis();
+  float periodMs = 1000.0f / walkFreq;
+  walkStartTime = t0;
+  while (millis() - t0 < (unsigned long)periodMs) {
+    updateHumanLikeWalk();
+    delay(15);
     server.handleClient();
   }
-
-  for (float i = sLength; i >= -sLength; i -= stepIncrement) {
-    if (!gaitRunning && activeGaitName != "step") return;
-    pos(-i, stepHeight - stepClearance, 'r');
-    pos(i, stepHeight, 'l');
-    delay(sVelocity);
-    server.handleClient();
-  }
+  parkStand();
 }
 
 // ==========================================
@@ -674,18 +658,12 @@ void handleRunGait() {
   } else if (gait == "walk" || gait == "forward") {
     gaitRunning = true;
     activeGaitName = "walk";
-    initializeIK();
-  } else if (gait == "backward" || gait == "back") {
-    gaitRunning = true;
-    activeGaitName = "backward";
-    initializeIK();
+    walkStartTime = millis();
   } else if (gait == "step") {
     gaitRunning = false;
     activeGaitName = "step";
     server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"step\"}");
-    initializeIK();
-    takeStep(stepLength, stepVelocity);
-    parkStand();
+    executeSingleHumanStride();
     return;
   }
   server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"" + gait + "\"}");
@@ -698,10 +676,10 @@ void handleSetGaitParam() {
   }
   String param = server.arg("param");
   float val = server.arg("val").toFloat();
-  if (param == "length") stepLength = val;
-  else if (param == "clearance") stepClearance = val;
-  else if (param == "height") stepHeight = val;
-  else if (param == "velocity" || param == "speed") stepVelocity = (int)val;
+  if (param == "freq" || param == "speed") walkFreq = val;
+  else if (param == "stride") strideAmp = val;
+  else if (param == "tilt" || param == "roll") rollTilt = val;
+  else if (param == "l_inv") leftHipInvert = val;
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -784,8 +762,7 @@ void loop() {
   }
 
   if (gaitRunning && (activeGaitName == "walk" || activeGaitName == "forward")) {
-    takeStep(stepLength, stepVelocity);
-  } else if (gaitRunning && (activeGaitName == "backward" || activeGaitName == "back")) {
-    takeStep(-stepLength, stepVelocity);
+    updateHumanLikeWalk();
+    delay(15);
   }
 }
