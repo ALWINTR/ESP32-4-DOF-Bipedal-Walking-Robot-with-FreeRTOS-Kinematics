@@ -459,8 +459,24 @@ int getServoIndex(int channel) {
   return -1;
 }
 
+bool initPCA9685() {
+  Wire.beginTransmission(0x40);
+  if (Wire.endTransmission() == 0) {
+    pwm.begin();
+    pwm.setPWMFreq(50);
+    delay(20);
+    pcaFound = true;
+    for (int i = 0; i < NUM_SERVOS; i++) servos[i].lastPulseLen = -1;
+    Serial.println("[SUCCESS] PCA9685 detected and initialized at 0x40 (50Hz)!");
+    return true;
+  }
+  return false;
+}
+
 void setServoAngleDirect(int channel, float angle) {
-  if (!pcaFound) return;
+  if (!pcaFound) {
+    if (!initPCA9685()) return;
+  }
   angle = constrain(angle, 0.0f, 180.0f);
 
   float us = SERVOMIN_US + (angle / 180.0f) * (SERVOMAX_US - SERVOMIN_US);
@@ -603,7 +619,24 @@ void handleGetAngles() {
     json += "\"" + String(servos[i].channel) + "\":" + String((int)servos[i].currentAngle);
     if (i < NUM_SERVOS - 1) json += ",";
   }
-  json += "},\"active_gait\":\"" + activeGaitName + "\",\"gait_running\":" + (gaitRunning ? "true" : "false") + "}";
+  json += "},\"active_gait\":\"" + activeGaitName + "\",\"gait_running\":" + (gaitRunning ? "true" : "false") + ",\"pca_found\":" + (pcaFound ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
+}
+
+void handleScanI2C() {
+  String json = "{\"devices\":[";
+  int count = 0;
+  for (byte addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      if (count > 0) json += ",";
+      char hexBuf[10];
+      snprintf(hexBuf, sizeof(hexBuf), "\"0x%02X\"", addr);
+      json += hexBuf;
+      count++;
+    }
+  }
+  json += "],\"pca_found\":" + String(pcaFound ? "true" : "false") + "}";
   server.send(200, "application/json", json);
 }
 
@@ -685,19 +718,24 @@ void setup() {
   loadSavedOffsets();
 
   Wire.begin(21, 22);
-  Wire.setClock(400000); // 400kHz Fast Mode I2C for Zero-Lag Control
+  Wire.setClock(100000); // 100kHz standard speed for stable I2C
   Wire.setTimeOut(100);
-  
-  Wire.beginTransmission(0x40);
-  if (Wire.endTransmission() == 0) {
-    pcaFound = true;
-    Serial.println("[SUCCESS] PCA9685 found at 0x40 (400kHz Fast I2C)!");
-    pwm.begin();
-    pwm.setPWMFreq(50);
-    delay(50);
+
+  Serial.println("Scanning I2C bus (SDA=21, SCL=22)...");
+  int i2cCount = 0;
+  for (byte a = 1; a < 127; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("  Found I2C device at 0x%02X\n", a);
+      i2cCount++;
+    }
+  }
+  if (i2cCount == 0) Serial.println("  [NOTICE] No I2C response yet on pins 21/22. Auto-reconnect active.");
+
+  if (initPCA9685()) {
     parkStand();
   } else {
-    Serial.println("[WARNING] PCA9685 not detected on I2C bus.");
+    Serial.println("[WARNING] PCA9685 not detected at 0x40 during boot. Auto-reconnect active.");
   }
 
   WiFi.mode(WIFI_AP_STA);
@@ -726,6 +764,7 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/set_servo", handleSetServo);
   server.on("/get_angles", handleGetAngles);
+  server.on("/scan_i2c", handleScanI2C);
   server.on("/save_offsets", handleSaveOffsets);
   server.on("/reset_offsets", handleResetOffsets);
   server.on("/run_gait", handleRunGait);
@@ -736,6 +775,16 @@ void setup() {
 
 void loop() {
   server.handleClient();
+
+  // Auto-reconnect PCA9685 whenever it powers up or reconnects
+  static unsigned long lastPcaCheck = 0;
+  if (!pcaFound && (millis() - lastPcaCheck > 1500)) {
+    lastPcaCheck = millis();
+    if (initPCA9685()) {
+      parkStand();
+    }
+  }
+
   if (gaitRunning && activeGaitName == "walk") {
     updateWeightShiftWalk();
     delay(10);
