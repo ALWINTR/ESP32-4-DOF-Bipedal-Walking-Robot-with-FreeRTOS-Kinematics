@@ -252,9 +252,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
 
       <div class="gait-actions">
-        <button class="btn" onclick="runGait('walk')" style="border-color: var(--success); color: var(--success); font-weight: 800;">🚀 1. Continuous Micro-Walk</button>
+        <button class="btn" onclick="runGait('walk')" style="border-color: var(--success); color: var(--success); font-weight: 800;">🚀 1. Continuous Walk</button>
         <button class="btn" onclick="runGait('step')" style="font-weight: 800;">🐾 2. Single Full Stride</button>
-        <button class="btn" onclick="runGait('stand')" style="border-color: var(--danger); color: #fda4af;">🛑 3. Stand</button>
+        <button class="btn" onclick="runGait('test')" style="border-color: var(--accent); color: var(--accent); font-weight: 800;">🧪 3. Test Hips & Knees</button>
+        <button class="btn" onclick="runGait('stand')" style="border-color: var(--danger); color: #fda4af;">🛑 4. Stand</button>
       </div>
 
       <div class="save-actions">
@@ -607,6 +608,45 @@ void executeSingleHumanStride() {
   parkStand();
 }
 
+void executeJointDiagnostics() {
+  parkStand();
+  delay(800);
+
+  // 1. Right Hip (CH 0): 94° -> 104° -> 94°
+  setServoAngleDirect(0, 104);
+  servos[0].currentAngle = 104;
+  delay(2000);
+  setServoAngleDirect(0, 94);
+  servos[0].currentAngle = 94;
+  delay(1000);
+
+  // 2. Right Knee (CH 1): 8° -> 22° -> 8°
+  setServoAngleDirect(1, 22);
+  servos[1].currentAngle = 22;
+  delay(2000);
+  setServoAngleDirect(1, 8);
+  servos[1].currentAngle = 8;
+  delay(1000);
+
+  // 3. Left Hip (CH 4): 94° -> 84° -> 94°
+  setServoAngleDirect(4, 84);
+  servos[3].currentAngle = 84;
+  delay(2000);
+  setServoAngleDirect(4, 94);
+  servos[3].currentAngle = 94;
+  delay(1000);
+
+  // 4. Left Knee (CH 8): 94° -> 80° -> 94°
+  setServoAngleDirect(8, 80);
+  servos[4].currentAngle = 80;
+  delay(2000);
+  setServoAngleDirect(8, 94);
+  servos[4].currentAngle = 94;
+  delay(1000);
+
+  parkStand();
+}
+
 // ==========================================
 // 5. Web Handlers
 // ==========================================
@@ -689,6 +729,12 @@ void handleRunGait() {
     activeGaitName = "step";
     server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"step\"}");
     executeSingleHumanStride();
+    return;
+  } else if (gait == "test" || gait == "test_joints") {
+    gaitRunning = false;
+    activeGaitName = "test";
+    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"test\"}");
+    executeJointDiagnostics();
     return;
   }
   server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"" + gait + "\"}");
