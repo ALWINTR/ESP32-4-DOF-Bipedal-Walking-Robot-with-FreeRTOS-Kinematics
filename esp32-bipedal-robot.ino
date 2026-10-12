@@ -53,15 +53,52 @@ Joint servos[NUM_SERVOS] = {
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
-// Micro-Amplitude Dynamic Human Walking Parameters (All 6 joints moving, small angle distance)
+// ==========================================
+// Planar Bipedal Inverse Kinematics (IK) Engine
+// Geometric closed-form trigonometry (Law of Cosines)
+// ==========================================
+const float L1 = 5.0f;        // Thigh link length (cm)
+const float L2 = 5.7f;        // Shin link length (cm)
+float stepHeight = 10.45f;    // Standing vertical height (cm)
+float stepClearance = 0.08f;  // Foot swing lift clearance (cm, ~0.8mm)
+float stepLength = 0.35f;     // Half stride length (cm, ~3.5mm)
 float walkFreq = 0.65f;        // 0.65 Hz calm cadence (1.54s per full cycle)
-float strideAmp = 4.5f;        // 4.5° Forward hip swing
-float kneeAmp = 3.0f;          // 3.0° Micro knee lift flexion (lifts foot ~2mm, 100% cap safe!)
-float ankleAmp = 2.0f;         // 2.0° Ankle ground level compensation
-float pushHip = 1.0f;          // 1.0° Stance hip push
-float pushAnk = 1.5f;          // 1.5° Stance foot push-off
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
+
+struct IKResult {
+  float hipDeg;
+  float kneeDeg;
+  float ankleDeg;
+};
+
+IKResult solveIK(float x, float z) {
+  IKResult res;
+  float hipRad2 = atan2(x, z);
+  float hipDeg2 = hipRad2 * (180.0f / (float)M_PI);
+
+  float z2 = sqrt(x * x + z * z);
+
+  float val1 = (L1 * L1 + z2 * z2 - L2 * L2) / (2.0f * L1 * z2);
+  val1 = constrain(val1, -1.0f, 1.0f);
+  float hipRad1 = acos(val1);
+  float hipDeg1 = hipRad1 * (180.0f / (float)M_PI);
+
+  float val2 = (L1 * L1 + L2 * L2 - z2 * z2) / (2.0f * L1 * L2);
+  val2 = constrain(val2, -1.0f, 1.0f);
+  float kneeRad = (float)M_PI - acos(val2);
+  float kneeDeg = kneeRad * (180.0f / (float)M_PI);
+
+  float val3 = (L2 * L2 + z2 * z2 - L1 * L1) / (2.0f * L2 * z2);
+  val3 = constrain(val3, -1.0f, 1.0f);
+  float ankleRad = ((float)M_PI / 2.0f) + hipRad2 - acos(val3);
+  float ankleDeg = ankleRad * (180.0f / (float)M_PI);
+
+  res.hipDeg = hipDeg1 + hipDeg2;
+  res.kneeDeg = kneeDeg;
+  res.ankleDeg = ankleDeg;
+  return res;
+}
 
 void loadSavedOffsets() {
   preferences.begin("biped_chmap", false);
@@ -590,10 +627,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
     </section>
 
-    <!-- 6-Joint Micro-Amplitude Gait Tuner -->
+    <!-- Inverse Kinematics (IK) Gait Tuner -->
     <section class="card">
       <div class="card-header-bar">
-        <div class="card-title"><span>🎛️</span><span>6-JOINT MICRO-AMPLITUDE GAIT TUNER</span></div>
+        <div class="card-title"><span>📐</span><span>INVERSE KINEMATICS (IK) GAIT TUNER</span></div>
       </div>
       <div class="tuner-grid">
         <div class="tuner-card">
@@ -601,16 +638,16 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <input type="range" class="slider-styled" id="slider-freq" min="4" max="12" value="6.5" step="0.5" oninput="setGaitParam('freq', this.value / 10.0)">
         </div>
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Hip Stride Amp</span><span class="tuner-val" id="val-stride">4.5°</span></div>
-          <input type="range" class="slider-styled" id="slider-stride" min="1.5" max="6.0" value="4.5" step="0.5" oninput="setGaitParam('stride', this.value)">
+          <div class="tuner-header"><span class="tuner-label">IK Stride Length</span><span class="tuner-val" id="val-stride">3.5 mm</span></div>
+          <input type="range" class="slider-styled" id="slider-stride" min="0.15" max="0.55" value="0.35" step="0.05" oninput="setGaitParam('stride', this.value)">
         </div>
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Knee Lift Amp</span><span class="tuner-val" id="val-knee">3.0°</span></div>
-          <input type="range" class="slider-styled" id="slider-knee" min="1.0" max="4.5" value="3.0" step="0.5" oninput="setGaitParam('knee', this.value)">
+          <div class="tuner-header"><span class="tuner-label">IK Foot Clearance</span><span class="tuner-val" id="val-knee">0.8 mm</span></div>
+          <input type="range" class="slider-styled" id="slider-knee" min="0.04" max="0.14" value="0.08" step="0.01" oninput="setGaitParam('knee', this.value)">
         </div>
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Foot Level Amp</span><span class="tuner-val" id="val-ankle">2.0°</span></div>
-          <input type="range" class="slider-styled" id="slider-ankle" min="0.5" max="4.0" value="2.0" step="0.5" oninput="setGaitParam('ankle', this.value)">
+          <div class="tuner-header"><span class="tuner-label">Standing Height Z</span><span class="tuner-val" id="val-ankle">10.45 cm</span></div>
+          <input type="range" class="slider-styled" id="slider-ankle" min="10.20" max="10.60" value="10.45" step="0.05" oninput="setGaitParam('ankle', this.value)">
         </div>
       </div>
     </section>
@@ -831,13 +868,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         if (el) el.innerText = val.toFixed(2) + ' Hz';
       } else if (param === 'stride') {
         const el = document.getElementById('val-stride');
-        if (el) el.innerText = val.toFixed(1) + '°';
+        if (el) el.innerText = (val * 10).toFixed(1) + ' mm';
       } else if (param === 'knee') {
         const el = document.getElementById('val-knee');
-        if (el) el.innerText = val.toFixed(1) + '°';
+        if (el) el.innerText = (val * 10).toFixed(1) + ' mm';
       } else if (param === 'ankle') {
         const el = document.getElementById('val-ankle');
-        if (el) el.innerText = val.toFixed(1) + '°';
+        if (el) el.innerText = val.toFixed(2) + ' cm';
       }
       sendCmd('/set_gait_param?param=' + param + '&val=' + val);
     }
@@ -956,40 +993,74 @@ void updateHumanLikeWalk() {
   float aKneeL = (float)servos[4].homeAngle;
   float aFootL = (float)servos[5].homeAngle;
 
-  // 3. Coordinated 6-Joint Micro-Amplitude Human Walking Gait
-  // Sub-millimeter clearances & small angular distance (< 4.5°) guarantees:
-  // - ZERO bracket-to-hip collisions (Right knee <= 12.5°, Left knee >= 89.5°)
-  // - Dynamic natural gait: Hip swings, Knee flexes for foot clearance, Foot levels flat & pushes off
+  // 3. True Planar Inverse Kinematics Walking Engine
+  // Computes exact geometric leg angles from foot position (x, z):
+  // - Knee lifts smoothly for floor clearance with ZERO knee-cap/hip-bracket collisions
+  // - Ankle is geometrically constrained to maintain horizontal foot orientation
+  IKResult ikNom = solveIK(0.0f, stepHeight);
+
   if (phase < (float)M_PI) {
-    // Phase 1: Right Leg SWING (Forward + Knee lift + Foot level), Left Leg STANCE (Push-off)
-    float sw = sin(phase) * currentGaitScale;
-    aHipR  = (float)servos[0].homeAngle + (strideAmp * sw);
-    aKneeR = (float)servos[1].homeAngle + (kneeAmp * sw);
-    aFootR = (float)servos[2].homeAngle - (ankleAmp * sw);
+    // Phase 1: Right Leg SWING, Left Leg STANCE
+    float p = phase / (float)M_PI; // 0.0 to 1.0
+    float x_sw = (-stepLength + 2.0f * stepLength * p) * currentGaitScale;
+    float z_sw = stepHeight - (stepClearance * sin(p * (float)M_PI) * currentGaitScale);
+    IKResult ikSw = solveIK(x_sw, z_sw);
 
-    aHipL  = (float)servos[3].homeAngle + (pushHip * sw);
+    float dHipSw  = ikSw.hipDeg - ikNom.hipDeg;
+    float dKneeSw = ikSw.kneeDeg - ikNom.kneeDeg;
+    float dAnkSw  = ikSw.ankleDeg - ikNom.ankleDeg;
+
+    float x_st = (stepLength - 2.0f * stepLength * p) * currentGaitScale;
+    float z_st = stepHeight;
+    IKResult ikSt = solveIK(x_st, z_st);
+
+    float dHipSt  = ikSt.hipDeg - ikNom.hipDeg;
+
+    // Right Swing Leg
+    aHipR  = (float)servos[0].homeAngle + dHipSw;
+    aKneeR = (float)servos[1].homeAngle + dKneeSw;
+    aFootR = (float)servos[2].homeAngle + dAnkSw;
+
+    // Left Stance Leg (Firm flat stance on floor)
+    aHipL  = (float)servos[3].homeAngle - dHipSt;
     aKneeL = (float)servos[4].homeAngle;
-    aFootL = (float)servos[5].homeAngle - (pushAnk * sw);
+    aFootL = (float)servos[5].homeAngle;
   } else {
-    // Phase 2: Left Leg SWING (Forward + Knee lift + Foot level), Right Leg STANCE (Push-off)
+    // Phase 2: Left Leg SWING, Right Leg STANCE
     float psi = phase - (float)M_PI;
-    float sw = sin(psi) * currentGaitScale;
-    aHipL  = (float)servos[3].homeAngle - (strideAmp * sw);
-    aKneeL = (float)servos[4].homeAngle - (kneeAmp * sw);
-    aFootL = (float)servos[5].homeAngle + (ankleAmp * sw);
+    float p = psi / (float)M_PI; // 0.0 to 1.0
+    float x_sw = (-stepLength + 2.0f * stepLength * p) * currentGaitScale;
+    float z_sw = stepHeight - (stepClearance * sin(p * (float)M_PI) * currentGaitScale);
+    IKResult ikSw = solveIK(x_sw, z_sw);
 
-    aHipR  = (float)servos[0].homeAngle - (pushHip * sw);
+    float dHipSw  = ikSw.hipDeg - ikNom.hipDeg;
+    float dKneeSw = ikSw.kneeDeg - ikNom.kneeDeg;
+    float dAnkSw  = ikSw.ankleDeg - ikNom.ankleDeg;
+
+    float x_st = (stepLength - 2.0f * stepLength * p) * currentGaitScale;
+    float z_st = stepHeight;
+    IKResult ikSt = solveIK(x_st, z_st);
+
+    float dHipSt  = ikSt.hipDeg - ikNom.hipDeg;
+
+    // Left Swing Leg
+    aHipL  = (float)servos[3].homeAngle - dHipSw;
+    aKneeL = (float)servos[4].homeAngle - dKneeSw;
+    aFootL = (float)servos[5].homeAngle - dAnkSw;
+
+    // Right Stance Leg (Firm flat stance on floor)
+    aHipR  = (float)servos[0].homeAngle + dHipSt;
     aKneeR = (float)servos[1].homeAngle;
-    aFootR = (float)servos[2].homeAngle + (pushAnk * sw);
+    aFootR = (float)servos[2].homeAngle;
   }
 
   // 4. Strict Safety Clamping (Hard mechanical boundary protection)
   aHipR  = constrain(aHipR,  92.5f, 100.0f);
-  aKneeR = constrain(aKneeR,  8.0f,  12.5f); // NEVER exceeds 12.5° -> 100% collision free!
-  aFootR = constrain(aFootR, 90.0f,  97.0f);
+  aKneeR = constrain(aKneeR,  8.0f,  12.5f); // NEVER exceeds 12.5° -> 100% knee collision free!
+  aFootR = constrain(aFootR, 94.0f,  96.5f); // NEVER drops below 94.0° -> IMPOSSIBLE to move backward into right knee!
   aHipL  = constrain(aHipL,  88.0f,  95.5f);
-  aKneeL = constrain(aKneeL, 89.5f,  94.0f); // NEVER drops below 89.5° -> 100% collision free!
-  aFootL = constrain(aFootL, 91.0f,  98.0f);
+  aKneeL = constrain(aKneeL, 89.5f,  94.0f); // NEVER drops below 89.5° -> 100% knee collision free!
+  aFootL = constrain(aFootL, 91.5f,  94.0f); // NEVER exceeds 94.0° -> IMPOSSIBLE to move forward into left knee!
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1026,8 +1097,8 @@ void executeJointDiagnostics() {
   setServoAngleDirect(1, 11.0f); servos[1].currentAngle = 11.0f; delay(1000);
   setServoAngleDirect(1, 8.0f);  servos[1].currentAngle = 8.0f;  delay(500);
 
-  // 3. Right Foot (CH 12): 94° -> 92.0° -> 94°
-  setServoAngleDirect(12, 92.0f); servos[2].currentAngle = 92.0f; delay(1000);
+  // 3. Right Foot (CH 12): 94° -> 96.0° -> 94° (Gentle forward flex away from right knee)
+  setServoAngleDirect(12, 96.0f); servos[2].currentAngle = 96.0f; delay(1000);
   setServoAngleDirect(12, 94.0f); servos[2].currentAngle = 94.0f; delay(500);
 
   // 4. Left Hip (CH 4): 94° -> 89.5° -> 94°
@@ -1038,8 +1109,8 @@ void executeJointDiagnostics() {
   setServoAngleDirect(8, 91.0f); servos[4].currentAngle = 91.0f; delay(1000);
   setServoAngleDirect(8, 94.0f); servos[4].currentAngle = 94.0f; delay(500);
 
-  // 6. Left Foot (CH 15): 94° -> 96.0° -> 94°
-  setServoAngleDirect(15, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
+  // 6. Left Foot (CH 15): 94° -> 92.0° -> 94° (Gentle backward flex away from left knee)
+  setServoAngleDirect(15, 92.0f); servos[5].currentAngle = 92.0f; delay(1000);
   setServoAngleDirect(15, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
 
   parkStand();
@@ -1146,9 +1217,9 @@ void handleSetGaitParam() {
   String param = server.arg("param");
   float val = server.arg("val").toFloat();
   if (param == "freq" || param == "speed") walkFreq = val;
-  else if (param == "stride") strideAmp = val;
-  else if (param == "knee") kneeAmp = val;
-  else if (param == "ankle") ankleAmp = val;
+  else if (param == "stride" || param == "length") stepLength = val;
+  else if (param == "knee" || param == "clearance" || param == "lift") stepClearance = val;
+  else if (param == "ankle" || param == "height") stepHeight = val;
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
