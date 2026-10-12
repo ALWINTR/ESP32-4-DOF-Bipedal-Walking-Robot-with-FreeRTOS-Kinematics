@@ -61,7 +61,7 @@ const float L1 = 5.0f;        // Thigh link length (cm)
 const float L2 = 5.7f;        // Shin link length (cm)
 float stepHeight = 10.45f;    // Standing vertical height (cm)
 float stepClearance = 0.08f;  // Foot swing lift clearance (cm, ~0.8mm)
-float stepLength = 0.35f;     // Half stride length (cm, ~3.5mm)
+float stepLength = 0.45f;     // Half stride length (cm, ~4.5mm)
 float walkFreq = 0.65f;        // 0.65 Hz calm cadence (1.54s per full cycle)
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
@@ -977,90 +977,48 @@ void updateHumanLikeWalk() {
 
   // 1. Smooth Anti-Jerk Envelope (eases smoothly into motion)
   if (gaitRunning) {
-    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.03f);
+    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.05f);
   } else {
-    if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.05f);
+    if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.08f);
   }
 
-  // 2. Continuous Gait Phase (0 to 2*PI)
+  // Continuous Gait Phase (0 to 2*PI)
   float phase = fmod(2.0f * (float)M_PI * walkFreq * t, 2.0f * (float)M_PI);
   if (phase < 0.0f) phase += 2.0f * (float)M_PI;
 
-  float aHipR  = (float)servos[0].homeAngle;
-  float aKneeR = (float)servos[1].homeAngle;
-  float aFootR = (float)servos[2].homeAngle;
-  float aHipL  = (float)servos[3].homeAngle;
-  float aKneeL = (float)servos[4].homeAngle;
-  float aFootL = (float)servos[5].homeAngle;
-
-  // 3. True Planar Inverse Kinematics Walking Engine
-  // Computes exact geometric leg angles from foot position (x, z):
-  // - Knee lifts smoothly for floor clearance with ZERO knee-cap/hip-bracket collisions
-  // - Ankle is geometrically constrained to maintain horizontal foot orientation
   IKResult ikNom = solveIK(0.0f, stepHeight);
 
-  if (phase < (float)M_PI) {
-    // Phase 1: Right Leg SWING, Left Leg STANCE
-    float p = phase / (float)M_PI; // 0.0 to 1.0
-    float x_sw = (-stepLength + 2.0f * stepLength * p) * currentGaitScale;
-    float z_sw = stepHeight - (stepClearance * sin(p * (float)M_PI) * currentGaitScale);
-    IKResult ikSw = solveIK(x_sw, z_sw);
+  // Synchronized Bipedal Trajectory (Opposite phases for Right and Left)
+  float effectiveLen = stepLength * currentGaitScale;
+  float effectiveClr = stepClearance * currentGaitScale;
 
-    float dHipSw  = ikSw.hipDeg - ikNom.hipDeg;
-    float dKneeSw = ikSw.kneeDeg - ikNom.kneeDeg;
-    float dAnkSw  = ikSw.ankleDeg - ikNom.ankleDeg;
+  // Right Leg: Swing during [0, PI], Stance during [PI, 2*PI]
+  float xr = -effectiveLen * cos(phase);
+  float zr = (phase < (float)M_PI) ? (stepHeight - effectiveClr * sin(phase)) : stepHeight;
 
-    float x_st = (stepLength - 2.0f * stepLength * p) * currentGaitScale;
-    float z_st = stepHeight;
-    IKResult ikSt = solveIK(x_st, z_st);
+  // Left Leg: Stance during [0, PI], Swing during [PI, 2*PI]
+  float xl = effectiveLen * cos(phase);
+  float zl = (phase >= (float)M_PI) ? (stepHeight - effectiveClr * sin(phase - (float)M_PI)) : stepHeight;
 
-    float dHipSt  = ikSt.hipDeg - ikNom.hipDeg;
+  IKResult ikR = solveIK(xr, zr);
+  IKResult ikL = solveIK(xl, zl);
 
-    // Right Swing Leg
-    aHipR  = (float)servos[0].homeAngle + dHipSw;
-    aKneeR = (float)servos[1].homeAngle + dKneeSw;
-    aFootR = (float)servos[2].homeAngle + dAnkSw;
+  float aHipR  = (float)servos[0].homeAngle + (ikR.hipDeg - ikNom.hipDeg);
+  float aKneeR = (float)servos[1].homeAngle + (ikR.kneeDeg - ikNom.kneeDeg);
+  float aFootR = (float)servos[2].homeAngle + (ikR.ankleDeg - ikNom.ankleDeg);
 
-    // Left Stance Leg (Firm flat stance on floor)
-    aHipL  = (float)servos[3].homeAngle - dHipSt;
-    aKneeL = (float)servos[4].homeAngle;
-    aFootL = (float)servos[5].homeAngle;
-  } else {
-    // Phase 2: Left Leg SWING, Right Leg STANCE
-    float psi = phase - (float)M_PI;
-    float p = psi / (float)M_PI; // 0.0 to 1.0
-    float x_sw = (-stepLength + 2.0f * stepLength * p) * currentGaitScale;
-    float z_sw = stepHeight - (stepClearance * sin(p * (float)M_PI) * currentGaitScale);
-    IKResult ikSw = solveIK(x_sw, z_sw);
+  float aHipL  = (float)servos[3].homeAngle - (ikL.hipDeg - ikNom.hipDeg);
+  float aKneeL = (float)servos[4].homeAngle - (ikL.kneeDeg - ikNom.kneeDeg);
+  float aFootL = (float)servos[5].homeAngle - (ikL.ankleDeg - ikNom.ankleDeg);
 
-    float dHipSw  = ikSw.hipDeg - ikNom.hipDeg;
-    float dKneeSw = ikSw.kneeDeg - ikNom.kneeDeg;
-    float dAnkSw  = ikSw.ankleDeg - ikNom.ankleDeg;
+  // Strict Physical Safety Constraints (Guarantees zero bracket collisions)
+  aHipR  = constrain(aHipR,  90.0f, 98.5f);
+  aKneeR = constrain(aKneeR,  8.0f, 12.5f); // NEVER exceeds 12.5° -> 100% collision free!
+  aFootR = constrain(aFootR, 94.0f, 96.5f); // NEVER drops below 94.0° -> IMPOSSIBLE to move backward into right knee!
 
-    float x_st = (stepLength - 2.0f * stepLength * p) * currentGaitScale;
-    float z_st = stepHeight;
-    IKResult ikSt = solveIK(x_st, z_st);
-
-    float dHipSt  = ikSt.hipDeg - ikNom.hipDeg;
-
-    // Left Swing Leg
-    aHipL  = (float)servos[3].homeAngle - dHipSw;
-    aKneeL = (float)servos[4].homeAngle - dKneeSw;
-    aFootL = (float)servos[5].homeAngle - dAnkSw;
-
-    // Right Stance Leg (Firm flat stance on floor)
-    aHipR  = (float)servos[0].homeAngle + dHipSt;
-    aKneeR = (float)servos[1].homeAngle;
-    aFootR = (float)servos[2].homeAngle;
-  }
-
-  // 4. Strict Safety Clamping (Hard mechanical boundary protection)
-  aHipR  = constrain(aHipR,  92.5f, 100.0f);
-  aKneeR = constrain(aKneeR,  8.0f,  12.5f); // NEVER exceeds 12.5° -> 100% knee collision free!
-  aFootR = constrain(aFootR, 94.0f,  96.5f); // NEVER drops below 94.0° -> IMPOSSIBLE to move backward into right knee!
-  aHipL  = constrain(aHipL,  88.0f,  95.5f);
-  aKneeL = constrain(aKneeL, 89.5f,  94.0f); // NEVER drops below 89.5° -> 100% knee collision free!
-  aFootL = constrain(aFootL, 91.5f,  94.0f); // NEVER exceeds 94.0° -> IMPOSSIBLE to move forward into left knee!
+  aHipL  = constrain(aHipL,  89.5f, 98.0f);
+  aKneeL = constrain(aKneeL, 89.5f, 94.0f); // NEVER drops below 89.5° -> 100% collision free!
+  aFootL = constrain(aFootL, 91.5f, 94.0f); // NEVER exceeds 94.0° -> IMPOSSIBLE to move forward into left knee!
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1074,6 +1032,7 @@ void updateHumanLikeWalk() {
 void executeSingleHumanStride() {
   gaitRunning = true;
   activeGaitName = "step";
+  currentGaitScale = 1.0f; // Instant full scale for a crisp, complete single stride!
   unsigned long t0 = millis();
   float periodMs = 1000.0f / walkFreq;
   walkStartTime = t0;
