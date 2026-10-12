@@ -39,15 +39,15 @@ struct Joint {
 };
 
 // Calibrated 6-DOF Baselines (Exact Physical Wiring Specifications):
-// Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 2 (Foot = 94°)
-// Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 12 (Foot = 94°)
+// Right Leg: CH 0 (Hip = 94°), CH 1 (Knee = 8°),  CH 12 (Foot = 94°)
+// Left Leg:  CH 4 (Hip = 94°), CH 8 (Knee = 94°), CH 15 (Foot = 94°)
 Joint servos[NUM_SERVOS] = {
   {0,  "Right Hip",   94.0f, 94.0f, -1, 94},
   {1,  "Right Knee",   8.0f,  8.0f, -1,  8},
-  {2,  "Right Foot",  94.0f, 94.0f, -1, 94},
+  {12, "Right Foot",  94.0f, 94.0f, -1, 94},
   {4,  "Left Hip",    94.0f, 94.0f, -1, 94},
   {8,  "Left Knee",   94.0f, 94.0f, -1, 94},
-  {12, "Left Foot",   94.0f, 94.0f, -1, 94}
+  {15, "Left Foot",   94.0f, 94.0f, -1, 94}
 };
 
 String activeGaitName = "stand";
@@ -67,10 +67,10 @@ void loadSavedOffsets() {
   preferences.begin("biped_chmap", false);
   servos[0].homeAngle = preferences.getInt("ch0", 94);  // Right Hip
   servos[1].homeAngle = preferences.getInt("ch1", 8);   // Right Knee
-  servos[2].homeAngle = preferences.getInt("ch2", 94);  // Right Foot
+  servos[2].homeAngle = preferences.getInt("ch12", 94); // Right Foot
   servos[3].homeAngle = preferences.getInt("ch4", 94);  // Left Hip
   servos[4].homeAngle = preferences.getInt("ch8", 94);  // Left Knee
-  servos[5].homeAngle = preferences.getInt("ch12", 94); // Left Foot
+  servos[5].homeAngle = preferences.getInt("ch15", 94); // Left Foot
   preferences.end();
 
   for (int i = 0; i < NUM_SERVOS; i++) {
@@ -83,10 +83,10 @@ void saveCurrentOffsets() {
   preferences.begin("biped_chmap", false);
   preferences.putInt("ch0", (int)servos[0].currentAngle);
   preferences.putInt("ch1", (int)servos[1].currentAngle);
-  preferences.putInt("ch2", (int)servos[2].currentAngle);
+  preferences.putInt("ch12", (int)servos[2].currentAngle);
   preferences.putInt("ch4", (int)servos[3].currentAngle);
   preferences.putInt("ch8", (int)servos[4].currentAngle);
-  preferences.putInt("ch12", (int)servos[5].currentAngle);
+  preferences.putInt("ch15", (int)servos[5].currentAngle);
   preferences.end();
 
   for (int i = 0; i < NUM_SERVOS; i++) {
@@ -100,10 +100,10 @@ void resetFactoryOffsets() {
   preferences.end();
   servos[0].homeAngle = 94; // Right Hip
   servos[1].homeAngle = 8;  // Right Knee
-  servos[2].homeAngle = 94; // Right Foot
+  servos[2].homeAngle = 94; // Right Foot (CH 12)
   servos[3].homeAngle = 94; // Left Hip
   servos[4].homeAngle = 94; // Left Knee
-  servos[5].homeAngle = 94; // Left Foot
+  servos[5].homeAngle = 94; // Left Foot (CH 15)
   for (int i = 0; i < NUM_SERVOS; i++) {
     servos[i].currentAngle = (float)servos[i].homeAngle;
     servos[i].targetAngle  = (float)servos[i].homeAngle;
@@ -389,11 +389,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <text x="80" y="204" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="700">R.KNEE</text>
           </g>
 
-          <!-- Right Foot (CH 2) -->
-          <g class="joint-node" id="node-2" onclick="selectJoint(2, 'Right Foot')">
+          <!-- Right Foot (CH 12) -->
+          <g class="joint-node" id="node-12" onclick="selectJoint(12, 'Right Foot')">
             <circle class="joint-outer" cx="140" cy="300" r="22" fill="#0f172a" stroke="#f59e0b" stroke-width="2.5" filter="url(#glow-amber)" />
-            <text x="140" y="296" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="800">CH 2</text>
-            <text id="svg-angle-2" x="140" y="310" text-anchor="middle" fill="#fff" font-size="11" font-weight="900">94°</text>
+            <text x="140" y="296" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="800">CH 12</text>
+            <text id="svg-angle-12" x="140" y="310" text-anchor="middle" fill="#fff" font-size="11" font-weight="900">94°</text>
             <text x="80" y="304" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="700">R.FOOT</text>
           </g>
 
@@ -413,11 +413,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <text x="460" y="204" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="700">L.KNEE</text>
           </g>
 
-          <!-- Left Foot (CH 12) -->
-          <g class="joint-node" id="node-12" onclick="selectJoint(12, 'Left Foot')">
+          <!-- Left Foot (CH 15) -->
+          <g class="joint-node" id="node-15" onclick="selectJoint(15, 'Left Foot')">
             <circle class="joint-outer" cx="400" cy="300" r="22" fill="#0f172a" stroke="#06b6d4" stroke-width="2.5" filter="url(#glow-cyan)" />
-            <text x="400" y="296" text-anchor="middle" fill="#06b6d4" font-size="9" font-weight="800">CH 12</text>
-            <text id="svg-angle-12" x="400" y="310" text-anchor="middle" fill="#fff" font-size="11" font-weight="900">94°</text>
+            <text x="400" y="296" text-anchor="middle" fill="#06b6d4" font-size="9" font-weight="800">CH 15</text>
+            <text id="svg-angle-15" x="400" y="310" text-anchor="middle" fill="#fff" font-size="11" font-weight="900">94°</text>
             <text x="460" y="304" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="700">L.FOOT</text>
           </g>
 
@@ -474,7 +474,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <g>
             <path d="M 370 170 L 415 170" stroke="#f59e0b" stroke-width="2" />
             <rect x="415" y="160" width="100" height="22" rx="4" fill="#1e293b" stroke="#f59e0b" />
-            <text x="465" y="174" text-anchor="middle" fill="#fbbf24" font-size="8" font-weight="800">CH 2: Right Foot</text>
+            <text x="465" y="174" text-anchor="middle" fill="#fbbf24" font-size="8" font-weight="800">CH 12: Right Foot</text>
           </g>
 
           <!-- Left Leg Servos -->
@@ -491,7 +491,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <g>
             <path d="M 370 285 L 415 285" stroke="#06b6d4" stroke-width="2" />
             <rect x="415" y="275" width="100" height="22" rx="4" fill="#1e293b" stroke="#06b6d4" />
-            <text x="465" y="289" text-anchor="middle" fill="#67e8f9" font-size="8" font-weight="800">CH 12: Left Foot</text>
+            <text x="465" y="289" text-anchor="middle" fill="#67e8f9" font-size="8" font-weight="800">CH 15: Left Foot</text>
           </g>
         </svg>
 
@@ -530,10 +530,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <span class="telem-angle telem-r" id="track-1">8°</span>
           <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-1" style="background: var(--accent-amber);"></div></div>
         </div>
-        <div class="telem-card" onclick="selectJoint(2, 'Right Foot')">
-          <span class="telem-name">R.Foot (CH 2)</span>
-          <span class="telem-angle telem-r" id="track-2">94°</span>
-          <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-2" style="background: var(--accent-amber);"></div></div>
+        <div class="telem-card" onclick="selectJoint(12, 'Right Foot')">
+          <span class="telem-name">R.Foot (CH 12)</span>
+          <span class="telem-angle telem-r" id="track-12">94°</span>
+          <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-12" style="background: var(--accent-amber);"></div></div>
         </div>
         <div class="telem-card" onclick="selectJoint(4, 'Left Hip')">
           <span class="telem-name">L.Hip (CH 4)</span>
@@ -545,10 +545,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <span class="telem-angle telem-l" id="track-8">94°</span>
           <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-8" style="background: var(--accent-cyan);"></div></div>
         </div>
-        <div class="telem-card" onclick="selectJoint(12, 'Left Foot')">
-          <span class="telem-name">L.Foot (CH 12)</span>
-          <span class="telem-angle telem-l" id="track-12">94°</span>
-          <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-12" style="background: var(--accent-cyan);"></div></div>
+        <div class="telem-card" onclick="selectJoint(15, 'Left Foot')">
+          <span class="telem-name">L.Foot (CH 15)</span>
+          <span class="telem-angle telem-l" id="track-15">94°</span>
+          <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-15" style="background: var(--accent-cyan);"></div></div>
         </div>
       </div>
     </section>
@@ -618,7 +618,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <!-- Right Leg Joint Controls -->
     <div class="leg-section-title leg-r-header">
       <span>RIGHT LEG JOINTS (SAGITTAL PITCH)</span>
-      <span style="font-size: 0.75rem; font-weight: 700;">CH 0: Hip (94°) | CH 1: Knee (8°) | CH 2: Foot (94°)</span>
+      <span style="font-size: 0.75rem; font-weight: 700;">CH 0: Hip (94°) | CH 1: Knee (8°) | CH 12: Foot (94°)</span>
     </div>
     <div class="servo-grid">
       <!-- CH 0 -->
@@ -647,17 +647,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <button class="step-btn" onclick="stepAngle(1, 10)">+10</button>
         </div>
       </div>
-      <!-- CH 2 -->
-      <div class="servo-card" id="card-2">
-        <div class="servo-header"><span class="servo-name" style="color: var(--accent-amber);">Right Foot (CH 2)</span><span class="servo-angle-text" id="angle-2">94°</span></div>
-        <input type="range" class="slider-styled" id="slider-2" min="0" max="180" value="94" oninput="setAngle(2, this.value)" onchange="setAngle(2, this.value)">
+      <!-- CH 12 -->
+      <div class="servo-card" id="card-12">
+        <div class="servo-header"><span class="servo-name" style="color: var(--accent-amber);">Right Foot (CH 12)</span><span class="servo-angle-text" id="angle-12">94°</span></div>
+        <input type="range" class="slider-styled" id="slider-12" min="0" max="180" value="94" oninput="setAngle(12, this.value)" onchange="setAngle(12, this.value)">
         <div class="step-btn-group">
-          <button class="step-btn" onclick="stepAngle(2, -10)">-10</button>
-          <button class="step-btn" onclick="stepAngle(2, -5)">-5</button>
-          <button class="step-btn" onclick="stepAngle(2, -1)">-1</button>
-          <button class="step-btn" onclick="stepAngle(2, 1)">+1</button>
-          <button class="step-btn" onclick="stepAngle(2, 5)">+5</button>
-          <button class="step-btn" onclick="stepAngle(2, 10)">+10</button>
+          <button class="step-btn" onclick="stepAngle(12, -10)">-10</button>
+          <button class="step-btn" onclick="stepAngle(12, -5)">-5</button>
+          <button class="step-btn" onclick="stepAngle(12, -1)">-1</button>
+          <button class="step-btn" onclick="stepAngle(12, 1)">+1</button>
+          <button class="step-btn" onclick="stepAngle(12, 5)">+5</button>
+          <button class="step-btn" onclick="stepAngle(12, 10)">+10</button>
         </div>
       </div>
     </div>
@@ -665,7 +665,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <!-- Left Leg Joint Controls -->
     <div class="leg-section-title leg-l-header">
       <span>LEFT LEG JOINTS (SAGITTAL PITCH)</span>
-      <span style="font-size: 0.75rem; font-weight: 700;">CH 4: Hip (94°) | CH 8: Knee (94°) | CH 12: Foot (94°)</span>
+      <span style="font-size: 0.75rem; font-weight: 700;">CH 4: Hip (94°) | CH 8: Knee (94°) | CH 15: Foot (94°)</span>
     </div>
     <div class="servo-grid">
       <!-- CH 4 -->
@@ -694,17 +694,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <button class="step-btn" onclick="stepAngle(8, 10)">+10</button>
         </div>
       </div>
-      <!-- CH 12 -->
-      <div class="servo-card" id="card-12">
-        <div class="servo-header"><span class="servo-name" style="color: var(--accent-cyan);">Left Foot (CH 12)</span><span class="servo-angle-text" id="angle-12">94°</span></div>
-        <input type="range" class="slider-styled" id="slider-12" min="0" max="180" value="94" oninput="setAngle(12, this.value)" onchange="setAngle(12, this.value)">
+      <!-- CH 15 -->
+      <div class="servo-card" id="card-15">
+        <div class="servo-header"><span class="servo-name" style="color: var(--accent-cyan);">Left Foot (CH 15)</span><span class="servo-angle-text" id="angle-15">94°</span></div>
+        <input type="range" class="slider-styled" id="slider-15" min="0" max="180" value="94" oninput="setAngle(15, this.value)" onchange="setAngle(15, this.value)">
         <div class="step-btn-group">
-          <button class="step-btn" onclick="stepAngle(12, -10)">-10</button>
-          <button class="step-btn" onclick="stepAngle(12, -5)">-5</button>
-          <button class="step-btn" onclick="stepAngle(12, -1)">-1</button>
-          <button class="step-btn" onclick="stepAngle(12, 1)">+1</button>
-          <button class="step-btn" onclick="stepAngle(12, 5)">+5</button>
-          <button class="step-btn" onclick="stepAngle(12, 10)">+10</button>
+          <button class="step-btn" onclick="stepAngle(15, -10)">-10</button>
+          <button class="step-btn" onclick="stepAngle(15, -5)">-5</button>
+          <button class="step-btn" onclick="stepAngle(15, -1)">-1</button>
+          <button class="step-btn" onclick="stepAngle(15, 1)">+1</button>
+          <button class="step-btn" onclick="stepAngle(15, 5)">+5</button>
+          <button class="step-btn" onclick="stepAngle(15, 10)">+10</button>
         </div>
       </div>
     </div>
@@ -760,7 +760,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       }
 
       // Highlight in SVG
-      [0, 1, 2, 4, 8, 12].forEach(c => {
+      [0, 1, 12, 4, 8, 15].forEach(c => {
         const node = document.getElementById('node-' + c);
         if (node) {
           if (c === ch) node.classList.add('selected');
@@ -994,10 +994,10 @@ void updateHumanLikeWalk() {
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
   servos[1].currentAngle = aKneeR; setServoAngleDirect(1,  aKneeR); // CH 1 Right Knee
-  servos[2].currentAngle = aFootR; setServoAngleDirect(2,  aFootR); // CH 2 Right Foot
+  servos[2].currentAngle = aFootR; setServoAngleDirect(12, aFootR); // CH 12 Right Foot
   servos[3].currentAngle = aHipL;  setServoAngleDirect(4,  aHipL);  // CH 4 Left Hip
   servos[4].currentAngle = aKneeL; setServoAngleDirect(8,  aKneeL); // CH 8 Left Knee
-  servos[5].currentAngle = aFootL; setServoAngleDirect(12, aFootL); // CH 12 Left Foot
+  servos[5].currentAngle = aFootL; setServoAngleDirect(15, aFootL); // CH 15 Left Foot
 }
 
 void executeSingleHumanStride() {
@@ -1026,9 +1026,9 @@ void executeJointDiagnostics() {
   setServoAngleDirect(1, 11.0f); servos[1].currentAngle = 11.0f; delay(1000);
   setServoAngleDirect(1, 8.0f);  servos[1].currentAngle = 8.0f;  delay(500);
 
-  // 3. Right Foot (CH 2): 94° -> 92.0° -> 94°
-  setServoAngleDirect(2, 92.0f); servos[2].currentAngle = 92.0f; delay(1000);
-  setServoAngleDirect(2, 94.0f); servos[2].currentAngle = 94.0f; delay(500);
+  // 3. Right Foot (CH 12): 94° -> 92.0° -> 94°
+  setServoAngleDirect(12, 92.0f); servos[2].currentAngle = 92.0f; delay(1000);
+  setServoAngleDirect(12, 94.0f); servos[2].currentAngle = 94.0f; delay(500);
 
   // 4. Left Hip (CH 4): 94° -> 89.5° -> 94°
   setServoAngleDirect(4, 89.5f); servos[3].currentAngle = 89.5f; delay(1000);
@@ -1038,9 +1038,9 @@ void executeJointDiagnostics() {
   setServoAngleDirect(8, 91.0f); servos[4].currentAngle = 91.0f; delay(1000);
   setServoAngleDirect(8, 94.0f); servos[4].currentAngle = 94.0f; delay(500);
 
-  // 6. Left Foot (CH 12): 94° -> 96.0° -> 94°
-  setServoAngleDirect(12, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
-  setServoAngleDirect(12, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
+  // 6. Left Foot (CH 15): 94° -> 96.0° -> 94°
+  setServoAngleDirect(15, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
+  setServoAngleDirect(15, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
 
   parkStand();
 }
