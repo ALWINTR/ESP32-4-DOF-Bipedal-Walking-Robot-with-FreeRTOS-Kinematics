@@ -53,22 +53,19 @@ Joint servos[NUM_SERVOS] = {
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
-#include "constants.h"
-
 // ==========================================
 // Planar Bipedal Inverse Kinematics (IK) Engine
 // Geometric closed-form trigonometry (Law of Cosines)
 // ==========================================
-const float L1 = l1;          // Thigh link length (cm from constants.h)
-const float L2 = l2;          // Shin link length (cm from constants.h)
+const float L1 = 5.0f;        // Thigh link length (cm)
+const float L2 = 5.7f;        // Shin link length (cm)
 float stepHeight = 10.35f;    // Standing vertical height (cm)
 float stepClearance = 0.22f;  // Foot swing lift clearance (cm, ~2.2mm)
 float stepLength = 0.65f;     // Half stride length (cm, ~6.5mm)
 float walkFreq = 0.75f;       // 0.75 Hz calm cadence (1.33s per full cycle)
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
-float refStepLength = 2.0f;    // Reference gait step length (cm)
-int refStepVelocity = 20;      // Reference gait step delay (ms)
+float footFlexRatio = 0.70f;   // Dynamic foot-to-knee coordination ratio (prevents bracket sticking)
 
 struct IKResult {
   float hipDeg;
@@ -631,59 +628,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
     </section>
 
-    <!-- Dedicated Reference IK Engine Card -->
-    <section class="card" style="border: 1px solid rgba(168, 85, 247, 0.35); background: radial-gradient(circle at 10% 10%, rgba(168, 85, 247, 0.1) 0%, rgba(15, 23, 42, 0.8) 100%);">
-      <div class="card-header-bar">
-        <div class="card-title">
-          <span style="color: #c084fc;">📐</span>
-          <span style="background: linear-gradient(135deg, #c084fc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">REFERENCE IK GAIT ENGINE (takeStep &amp; initialize)</span>
-        </div>
-        <div class="status-badge" style="border-color: rgba(168, 85, 247, 0.4); color: #e9d5ff;">
-          <span>pos(x, z) Kinematics</span>
-        </div>
-      </div>
-      
-      <!-- Reference Actions Box -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; width: 100%;">
-        <button class="gait-action-btn" onclick="runGait('ref_walk')" style="border-color: rgba(168,85,247,0.4); background: rgba(168,85,247,0.15); color: #e9d5ff;">
-          <span>🚀 Continuous takeStep Walk</span>
-          <span>▶</span>
-        </button>
-        <button class="gait-action-btn" onclick="runGait('ref_step')" style="border-color: rgba(56,189,248,0.4); background: rgba(56,189,248,0.15); color: #bae6fd;">
-          <span>🐾 Single takeStep Stride</span>
-          <span>▶</span>
-        </button>
-        <button class="gait-action-btn" onclick="runGait('ref_init')" style="border-color: rgba(16,185,129,0.4); background: rgba(16,185,129,0.15); color: #a7f3d0;">
-          <span>🧘 Smooth Crouch Init (10.7cm)</span>
-          <span>▶</span>
-        </button>
-        <button class="gait-action-btn" onclick="runGait('stand')" style="border-color: rgba(244,63,94,0.4); background: rgba(244,63,94,0.15); color: #fecdd3;">
-          <span>🛑 Park Neutral Stand</span>
-          <span>⏹</span>
-        </button>
-      </div>
-
-      <!-- Reference Parameters Grid -->
-      <div class="tuner-grid" style="margin-top: 4px;">
-        <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Step Length (cm)</span><span class="tuner-val" id="val-ref-stride">2.00 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-stride" min="0.50" max="3.00" value="2.00" step="0.10" oninput="setGaitParam('ref_stride', this.value)">
-        </div>
-        <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Step Clearance (cm)</span><span class="tuner-val" id="val-ref-clearance">0.22 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-clearance" min="0.10" max="1.50" value="0.22" step="0.02" oninput="setGaitParam('ref_knee', this.value)">
-        </div>
-        <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Velocity Delay (ms)</span><span class="tuner-val" id="val-ref-delay">20 ms</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-delay" min="0" max="60" value="20" step="5" oninput="setGaitParam('ref_vel', this.value)">
-        </div>
-        <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Standing Height Z (cm)</span><span class="tuner-val" id="val-ref-height">10.35 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-height" min="9.00" max="10.70" value="10.35" step="0.05" oninput="setGaitParam('ref_height', this.value)">
-        </div>
-      </div>
-    </section>
-
     <!-- Inverse Kinematics (IK) Gait Tuner -->
     <section class="card">
       <div class="card-header-bar">
@@ -705,6 +649,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <div class="tuner-card">
           <div class="tuner-header"><span class="tuner-label">Standing Height Z</span><span class="tuner-val" id="val-ankle">10.35 cm</span></div>
           <input type="range" class="slider-styled" id="slider-ankle" min="10.10" max="10.55" value="10.35" step="0.05" oninput="setGaitParam('ankle', this.value)">
+        </div>
+        <div class="tuner-card">
+          <div class="tuner-header"><span class="tuner-label">Foot-Knee Coordination</span><span class="tuner-val" id="val-flex">0.70x</span></div>
+          <input type="range" class="slider-styled" id="slider-flex" min="0.20" max="1.00" value="0.70" step="0.05" oninput="setGaitParam('foot', this.value)">
         </div>
       </div>
     </section>
@@ -932,18 +880,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       } else if (param === 'ankle') {
         const el = document.getElementById('val-ankle');
         if (el) el.innerText = val.toFixed(2) + ' cm';
-      } else if (param === 'ref_stride') {
-        const el = document.getElementById('val-ref-stride');
-        if (el) el.innerText = val.toFixed(2) + ' cm';
-      } else if (param === 'ref_knee') {
-        const el = document.getElementById('val-ref-clearance');
-        if (el) el.innerText = val.toFixed(2) + ' cm';
-      } else if (param === 'ref_vel') {
-        const el = document.getElementById('val-ref-delay');
-        if (el) el.innerText = parseInt(val) + ' ms';
-      } else if (param === 'ref_height') {
-        const el = document.getElementById('val-ref-height');
-        if (el) el.innerText = val.toFixed(2) + ' cm';
+      } else if (param === 'foot') {
+        const el = document.getElementById('val-flex');
+        if (el) el.innerText = val.toFixed(2) + 'x';
       }
       sendCmd('/set_gait_param?param=' + param + '&val=' + val);
     }
@@ -1082,24 +1021,27 @@ void updateHumanLikeWalk() {
   IKResult ikR = solveIK(xr, zr);
   IKResult ikL = solveIK(xl, zl);
 
+  float dKneeR = max(0.0f, ikR.kneeDeg - ikNom.kneeDeg);
+  float dKneeL = max(0.0f, ikL.kneeDeg - ikNom.kneeDeg);
+
   float aHipR  = (float)servos[0].homeAngle + (ikR.hipDeg - ikNom.hipDeg);
-  float aKneeR = (float)servos[1].homeAngle + (ikR.kneeDeg - ikNom.kneeDeg);
+  float aKneeR = (float)servos[1].homeAngle + dKneeR;
+  // Right Foot: dynamically flexes away from right knee in proportion to knee bend (zero bracket stick)
+  float aFootR = (float)servos[2].homeAngle - (footFlexRatio * dKneeR);
 
   float aHipL  = (float)servos[3].homeAngle - (ikL.hipDeg - ikNom.hipDeg);
-  float aKneeL = (float)servos[4].homeAngle - (ikL.kneeDeg - ikNom.kneeDeg);
+  float aKneeL = (float)servos[4].homeAngle - dKneeL;
+  // Left Foot: dynamically flexes away from left knee in proportion to knee bend (zero bracket stick)
+  float aFootL = (float)servos[5].homeAngle + (footFlexRatio * dKneeL);
 
-  // Both feet strictly locked to flat 94° neutral support - guarantees ZERO bracket collisions
-  float aFootR = (float)servos[2].homeAngle; // 94.0° flat ground plane
-  float aFootL = (float)servos[5].homeAngle; // 94.0° flat ground plane
+  // Strict Physical Safety Constraints (Collision-free dynamic ranges)
+  aHipR  = constrain(aHipR,  94.0f, 102.0f); // Never swings backward below 94° into chassis bracket
+  aKneeR = constrain(aKneeR,  8.0f,  18.0f); // Bends up to ~18°, returns to 8° neutral
+  aFootR = constrain(aFootR, 88.0f,  95.0f); // Flexes down away from knee, returns to 94° flat ground
 
-  // Strict Physical Safety Constraints (Forward-only; eliminates rear bracket jam)
-  aHipR  = constrain(aHipR,  94.0f, 102.0f); // Never swings backward below 94° into bracket
-  aKneeR = constrain(aKneeR,  8.0f,  18.0f); // Bends smoothly up to ~18°, never hyperextends below 8°
-  aFootR = constrain(aFootR, 93.5f,  95.0f); // Strictly flat 94.0° neutral
-
-  aHipL  = constrain(aHipL,  86.0f,  94.0f); // Never swings backward above 94° into bracket
-  aKneeL = constrain(aKneeL, 84.0f,  94.0f); // Bends smoothly down to ~84°, never hyperextends past 94°
-  aFootL = constrain(aFootL, 93.5f,  95.0f); // Strictly flat 94.0° neutral
+  aHipL  = constrain(aHipL,  86.0f,  94.0f); // Never swings backward above 94° into chassis bracket
+  aKneeL = constrain(aKneeL, 84.0f,  94.0f); // Bends down to ~84°, returns to 94° neutral
+  aFootL = constrain(aFootL, 93.5f, 100.0f); // Flexes up away from knee, returns to 94° flat ground
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1153,107 +1095,6 @@ void executeJointDiagnostics() {
   setServoAngleDirect(15, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
   setServoAngleDirect(15, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
 
-  parkStand();
-}
-
-// ==========================================
-// 4B. Direct Reference IK Walk Engine (takeStep & initialize)
-// Directly integrated from user reference inverse kinematics
-// ==========================================
-
-struct ServoProxy {
-  int channel;
-  int servoIndex;
-  void write(int angle) {
-    write((float)angle);
-  }
-  void write(float angle) {
-    if (servoIndex >= 0 && servoIndex < NUM_SERVOS) {
-      servos[servoIndex].currentAngle = angle;
-    }
-    setServoAngleDirect(channel, angle);
-  }
-  void attach(int pin) {}
-};
-
-ServoProxy hipL   = {4,  3};
-ServoProxy hipR   = {0,  0};
-ServoProxy kneeL  = {8,  4};
-ServoProxy kneeR  = {1,  1};
-ServoProxy ankleL = {15, 5};
-ServoProxy ankleR = {12, 2};
-
-void updateServoPos(int target1, int target2, int target3, char leg){
-  if (leg == 'l'){
-    hipL.write(hipLOffset - target1);
-    kneeL.write(kneeLOffset - target2);
-    ankleL.write(2*ankleLOffset - target3);
-  }
-  else if (leg == 'r'){
-    hipR.write(hipROffset + target1);
-    kneeR.write(kneeROffset + target2);
-    ankleR.write(target3);
-  }
-}
-
-void pos(float x, float z, char leg){
-  float hipRad2 = atan(x/z);
-  float hipDeg2 = hipRad2 * (180/PI);
-
-  float z2 = z/cos(hipRad2);
-
-  float val1 = (sq(l1) + sq(z2) - sq(l2))/(2*l1*z2);
-  val1 = constrain(val1, -1.0f, 1.0f);
-  float hipRad1 = acos(val1);
-  float hipDeg1 = hipRad1 * (180/PI);
-  
-  float val2 = (sq(l1) + sq(l2) - sq(z2))/(2*l1*l2);
-  val2 = constrain(val2, -1.0f, 1.0f);
-  float kneeRad = PI - acos(val2);
-
-  float val3 = (sq(l2) + sq(z2) - sq(l1))/(2*l2*z2);
-  val3 = constrain(val3, -1.0f, 1.0f);
-  float ankleRad = PI/2 + hipRad2 - acos(val3);
-  
-  float hipDeg = hipDeg1 + hipDeg2;
-  float kneeDeg = kneeRad * (180/PI);
-  float ankleDeg = ankleRad * (180/PI);
-
-//  Serial.print(hipDeg);
-//  Serial.print("\t");
-//  Serial.print(kneeDeg);
-//  Serial.print("\t");
-//  Serial.println(ankleDeg);
-
-  updateServoPos(hipDeg, kneeDeg, ankleDeg, leg);  
-}
-
-void takeStep(float stepLength, int stepVelocity){
-  for (float i = stepLength; i >= -stepLength; i-=0.5){
-    if (!gaitRunning && activeGaitName != "ref_step") break;
-    pos(i, stepHeight, 'r');
-    pos(-i, stepHeight - stepClearance, 'l');
-    delay(stepVelocity);
-    server.handleClient();
-  }
-
-  for (float i = stepLength; i >= -stepLength; i-=0.5){
-    if (!gaitRunning && activeGaitName != "ref_step") break;
-    pos(-i, stepHeight - stepClearance, 'r');
-    pos(i, stepHeight, 'l');
-    delay(stepVelocity);
-    server.handleClient();
-  }
-}
-
-void initialize(){
-  for (float i = 10.7; i >= stepHeight; i-=0.1){
-    pos(0, i, 'l');
-    pos(0, i, 'r');
-    delay(15);
-    server.handleClient();
-  }
-  parkStand();
 }
 
 // ==========================================
@@ -1344,23 +1185,6 @@ void handleRunGait() {
     activeGaitName = "test";
     server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"test\"}");
     executeJointDiagnostics();
-    return;
-  } else if (gait == "ref_walk") {
-    gaitRunning = true;
-    activeGaitName = "ref_walk";
-  } else if (gait == "ref_step") {
-    gaitRunning = false;
-    activeGaitName = "ref_step";
-    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"ref_step\"}");
-    takeStep(refStepLength, refStepVelocity);
-    parkStand();
-    return;
-  } else if (gait == "ref_init") {
-    gaitRunning = false;
-    activeGaitName = "ref_init";
-    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"ref_init\"}");
-    initialize();
-    return;
   }
   server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"" + gait + "\"}");
 }
@@ -1376,10 +1200,7 @@ void handleSetGaitParam() {
   else if (param == "stride" || param == "length") stepLength = val;
   else if (param == "knee" || param == "clearance" || param == "lift") stepClearance = val;
   else if (param == "ankle" || param == "height") stepHeight = val;
-  else if (param == "ref_stride") refStepLength = val;
-  else if (param == "ref_knee" || param == "ref_clearance") stepClearance = val;
-  else if (param == "ref_vel" || param == "ref_delay") refStepVelocity = (int)val;
-  else if (param == "ref_height") stepHeight = val;
+  else if (param == "foot" || param == "flex" || param == "ratio") footFlexRatio = val;
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -1465,8 +1286,6 @@ void loop() {
     if (activeGaitName == "walk" || activeGaitName == "forward") {
       updateHumanLikeWalk();
       delay(15);
-    } else if (activeGaitName == "ref_walk") {
-      takeStep(refStepLength, refStepVelocity);
     }
   }
 }
