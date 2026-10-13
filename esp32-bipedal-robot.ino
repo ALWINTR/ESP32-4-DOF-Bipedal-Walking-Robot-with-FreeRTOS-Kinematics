@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Wire.h>
@@ -9,12 +10,10 @@
 // ==========================================
 // 1. WiFi Configuration & Constants
 // ==========================================
-const char* ssid = "MATHA BSNL FTTH";
-const char* password = "qwerty09";
-
 const char* ap_ssid = "ESP32-Biped-Robot";
 const char* ap_password = "12345678";
 
+WiFiMulti wifiMulti;
 WebServer server(80);
 
 // ==========================================
@@ -1240,22 +1239,43 @@ void setup() {
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
+  // Support both local networks - automatically connects to user's active network (MATHA ELECTRONICS_ Dwan)
+  wifiMulti.addAP("MATHA ELECTRONICS_ Dwan", "qwerty09");
+  wifiMulti.addAP("MATHA BSNL FTTH", "qwerty09");
 
+  Serial.println("Connecting to WiFi (trying MATHA ELECTRONICS_ Dwan & MATHA BSNL FTTH)...");
   unsigned long startWifi = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startWifi < 10000) {
+  while (wifiMulti.run() != WL_CONNECTED && millis() - startWifi < 10000) {
     delay(500);
     Serial.print(".");
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected!");
-    Serial.print("Web URL: http://");
+    Serial.println("\nWiFi Station Connected!");
+    Serial.print("Connected SSID: ");
+    Serial.println(WiFi.SSID());
+    Serial.print("Station IP: http://");
     Serial.println(WiFi.localIP());
+    Serial.print("Gateway IP: ");
+    Serial.println(WiFi.gatewayIP());
+    Serial.print("Subnet Mask: ");
+    Serial.println(WiFi.subnetMask());
   } else {
-    Serial.println("\nWiFi connection timed out. Connect to AP: " + String(ap_ssid));
+    Serial.println("\nWiFi Station connection timed out.");
+  }
+
+  // Ensure Dual Mode (AP + STA) is strictly active so SoftAP is NEVER disabled
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(ap_ssid, ap_password);
+  Serial.print("SoftAP Active -> SSID: ");
+  Serial.print(ap_ssid);
+  Serial.print(" | Password: ");
+  Serial.print(ap_password);
+  Serial.print(" | Access Point URL: http://");
+  Serial.println(WiFi.softAPIP());
+
+  if (MDNS.begin("biped")) {
+    Serial.println("mDNS responder started: http://biped.local");
   }
 
   server.on("/", handleRoot);
@@ -1287,5 +1307,16 @@ void loop() {
       updateHumanLikeWalk();
       delay(15);
     }
+  }
+
+  // Periodic network & IP heartbeat to Serial (every 6 seconds)
+  static unsigned long lastNetPrint = 0;
+  if (millis() - lastNetPrint > 6000) {
+    lastNetPrint = millis();
+    Serial.printf("[NET STATUS] Station: %s (IP: %s) | SoftAP: %s (IP: %s)\n",
+      (WiFi.status() == WL_CONNECTED) ? WiFi.SSID().c_str() : "Disconnected",
+      (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString().c_str() : "N/A",
+      ap_ssid,
+      WiFi.softAPIP().toString().c_str());
   }
 }
