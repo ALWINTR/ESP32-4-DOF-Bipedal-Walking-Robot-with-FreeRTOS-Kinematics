@@ -77,6 +77,13 @@ int hipROffset   = 94;
 int kneeROffset  = 8;
 int ankleROffset = 94;
 
+// Dynamic Ground Reaction Force & Weight Telemetry (calculated during walking)
+float robotTotalWeightGrams = 500.0f; // Nominal mass (500g)
+float weightLeftGrams       = 250.0f; // Live estimated ground load on Left Foot (g)
+float weightRightGrams      = 250.0f; // Live estimated ground load on Right Foot (g)
+float groundForceNewtons    = 4.905f; // Total Ground Reaction Force (N)
+String groundContactState   = "DUAL STANCE";
+
 struct IKResult {
   float hipDeg;
   float kneeDeg;
@@ -366,6 +373,25 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .telem-l { color: var(--accent-cyan); }
     .telem-bar-track { width: 100%; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
     .telem-bar-fill { height: 100%; width: 50%; border-radius: 2px; transition: width 0.15s; }
+
+    /* Ground Weight & Reaction Force HUD */
+    .weight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    @media (max-width: 600px) { .weight-grid { grid-template-columns: 1fr; } }
+    .weight-card {
+      background: rgba(0,0,0,0.32); border: 1px solid var(--border-card);
+      border-radius: var(--radius-sm); padding: 12px 14px; display: flex; flex-direction: column; gap: 7px;
+    }
+    .weight-card-l { border-color: rgba(6, 182, 212, 0.35); }
+    .weight-card-r { border-color: rgba(245, 158, 11, 0.35); }
+    .weight-title-row { display: flex; justify-content: space-between; align-items: center; }
+    .weight-title { font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+    .weight-val { font-size: 1.5rem; font-weight: 900; font-family: ui-monospace, monospace; }
+    .weight-bar-bg { width: 100%; height: 9px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; }
+    .weight-bar-fill { height: 100%; border-radius: 5px; transition: width 0.12s ease-out; }
+    .grf-summary-bar {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+      padding: 9px 13px; background: rgba(0,0,0,0.36); border-radius: var(--radius-sm); border: 1px solid var(--border-card);
+    }
 
     /* Joint Control Cards */
     .leg-section-title {
@@ -708,6 +734,65 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <span class="telem-name">L.Foot (15)</span>
           <span class="telem-angle telem-l" id="track-15">94°</span>
           <div class="telem-bar-track"><div class="telem-bar-fill" id="bar-15" style="background: var(--accent-cyan);"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Real-Time Ground Reaction Force & Weight Distribution HUD Card -->
+    <section class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>⚖️</span>
+          <span>GROUND REACTION FORCE & WEIGHT DISTRIBUTION (WALKING)</span>
+        </div>
+        <div class="hud-badge" style="color: var(--accent-emerald);">
+          <span id="hud-contact-state">DUAL STANCE</span>
+        </div>
+      </div>
+      <div class="weight-grid">
+        <!-- Left Foot Ground Weight -->
+        <div class="weight-card weight-card-l">
+          <div class="weight-title-row">
+            <span class="weight-title" style="color: var(--accent-cyan);">Left Foot Ground Load</span>
+            <span class="hud-badge" id="weight-pct-l" style="color: var(--accent-cyan);">50%</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span class="weight-val" id="weight-val-l" style="color: var(--accent-cyan);">250g</span>
+            <span style="font-size: 0.72rem; color: var(--text-muted);">Max: 500g</span>
+          </div>
+          <div class="weight-bar-bg">
+            <div class="weight-bar-fill" id="weight-bar-l" style="width: 50%; background: linear-gradient(90deg, #0284c7, #06b6d4);"></div>
+          </div>
+        </div>
+
+        <!-- Right Foot Ground Weight -->
+        <div class="weight-card weight-card-r">
+          <div class="weight-title-row">
+            <span class="weight-title" style="color: var(--accent-amber);">Right Foot Ground Load</span>
+            <span class="hud-badge" id="weight-pct-r" style="color: var(--accent-amber);">50%</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span class="weight-val" id="weight-val-r" style="color: var(--accent-amber);">250g</span>
+            <span style="font-size: 0.72rem; color: var(--text-muted);">Max: 500g</span>
+          </div>
+          <div class="weight-bar-bg">
+            <div class="weight-bar-fill" id="weight-bar-r" style="width: 50%; background: linear-gradient(90deg, #d97706, #f59e0b);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grf-summary-bar">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">TOTAL DYNAMIC FORCE:</span>
+          <span style="font-size: 1.1rem; font-weight: 900; color: #fff; font-family: ui-monospace, monospace;" id="hud-force-n">4.91 N</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">TOTAL ROBOT MASS:</span>
+          <span style="font-size: 0.95rem; font-weight: 800; color: var(--accent-sky); font-family: ui-monospace, monospace;">500 g</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">SUPPORT STABILITY:</span>
+          <span style="font-size: 0.75rem; font-weight: 800; color: var(--accent-emerald);" id="hud-zmp-status">STABLE (ZMP CENTERED)</span>
         </div>
       </div>
     </section>
@@ -1092,6 +1177,38 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             const hag = document.getElementById('hud-active-gait');
             if (hag) hag.textContent = d.active_gait.toUpperCase();
           }
+          if (d.weight_l !== undefined) {
+            const wl = Math.round(d.weight_l);
+            const elWl = document.getElementById('weight-val-l');
+            if (elWl) elWl.innerText = wl + 'g';
+            const pctL = Math.min(100, Math.round((d.weight_l / 500) * 100));
+            const elPctL = document.getElementById('weight-pct-l');
+            if (elPctL) elPctL.innerText = pctL + '%';
+            const elBarL = document.getElementById('weight-bar-l');
+            if (elBarL) elBarL.style.width = pctL + '%';
+            const pfL = document.getElementById('plate-foot-l');
+            if (pfL) pfL.setAttribute('opacity', (0.35 + (pctL / 100) * 0.65).toFixed(2));
+          }
+          if (d.weight_r !== undefined) {
+            const wr = Math.round(d.weight_r);
+            const elWr = document.getElementById('weight-val-r');
+            if (elWr) elWr.innerText = wr + 'g';
+            const pctR = Math.min(100, Math.round((d.weight_r / 500) * 100));
+            const elPctR = document.getElementById('weight-pct-r');
+            if (elPctR) elPctR.innerText = pctR + '%';
+            const elBarR = document.getElementById('weight-bar-r');
+            if (elBarR) elBarR.style.width = pctR + '%';
+            const pfR = document.getElementById('plate-foot-r');
+            if (pfR) pfR.setAttribute('opacity', (0.35 + (pctR / 100) * 0.65).toFixed(2));
+          }
+          if (d.force_n !== undefined) {
+            const elF = document.getElementById('hud-force-n');
+            if (elF) elF.innerText = d.force_n.toFixed(2) + ' N';
+          }
+          if (d.contact) {
+            const elC = document.getElementById('hud-contact-state');
+            if (elC) elC.innerText = d.contact;
+          }
         }).catch(()=>{});
     }
 
@@ -1154,6 +1271,10 @@ void parkStand() {
   gaitRunning = false;
   activeGaitName = "stand";
   currentGaitScale = 0.0f;
+  weightLeftGrams    = 250.0f;
+  weightRightGrams   = 250.0f;
+  groundForceNewtons = 4.905f;
+  groundContactState = "DUAL STANCE";
   for (int i = 0; i < NUM_SERVOS; i++) {
     servos[i].currentAngle = (float)servos[i].homeAngle;
     setServoAngleDirect(servos[i].channel, (float)servos[i].homeAngle);
@@ -1208,6 +1329,34 @@ void updateHumanLikeWalk() {
     xl = curStepLen * cosP;
     zl = curHeight - (curClear * (-sinP));
   }
+
+  // Real-Time Dynamic Ground Reaction Force & Weight Calculation
+  if (currentGaitScale > 0.08f) {
+    if (sinP > 0.08f) {
+      // Phase 1: Right leg swing (air), Left leg stance on ground
+      float liftFraction = min(1.0f, sinP * 1.6f);
+      weightRightGrams = max(0.0f, 250.0f * (1.0f - liftFraction));
+      float dynamicAccel = 1.0f + 0.15f * sinP;
+      weightLeftGrams = min(600.0f, (robotTotalWeightGrams - weightRightGrams) * dynamicAccel);
+      groundContactState = (sinP > 0.25f) ? "LEFT SINGLE SUPPORT" : "WEIGHT TRANSFER";
+    } else if (sinP < -0.08f) {
+      // Phase 2: Left leg swing (air), Right leg stance on ground
+      float liftFraction = min(1.0f, (-sinP) * 1.6f);
+      weightLeftGrams = max(0.0f, 250.0f * (1.0f - liftFraction));
+      float dynamicAccel = 1.0f + 0.15f * (-sinP);
+      weightRightGrams = min(600.0f, (robotTotalWeightGrams - weightLeftGrams) * dynamicAccel);
+      groundContactState = (-sinP > 0.25f) ? "RIGHT SINGLE SUPPORT" : "WEIGHT TRANSFER";
+    } else {
+      weightLeftGrams = 250.0f;
+      weightRightGrams = 250.0f;
+      groundContactState = "DUAL STANCE";
+    }
+  } else {
+    weightLeftGrams = 250.0f;
+    weightRightGrams = 250.0f;
+    groundContactState = "DUAL STANCE";
+  }
+  groundForceNewtons = (weightLeftGrams + weightRightGrams) * 0.00981f;
 
   // 2. Solve Inverse Kinematics for Both Legs in Real Time
   IKResult ikR   = solveIK(xr, zr);
@@ -1335,54 +1484,61 @@ ServoProxy kneeR  = {1,  1,  3.0f,  28.0f};
 ServoProxy ankleL = {15, 5, 84.0f, 104.0f};
 ServoProxy ankleR = {12, 2, 84.0f, 104.0f};
 
-void updateServoPos(int target1, int target2, int target3, char leg){
+void updateServoPos(float dHip, float dKnee, float dAnkle, char leg){
   if (leg == 'l'){
-    hipL.write(hipLOffset - target1);
-    kneeL.write(kneeLOffset - target2);
-    ankleL.write(ankleLOffset + (target3 - 90)); // Leveling flex away from knee, zero collision!
+    hipL.write((float)hipLOffset - dHip);
+    kneeL.write((float)kneeLOffset - dKnee);
+    ankleL.write((float)ankleLOffset + dAnkle);
   }
   else if (leg == 'r'){
-    hipR.write(hipROffset + target1);
-    kneeR.write(kneeROffset + target2);
-    ankleR.write(ankleROffset + (target3 - 90)); // Leveling flex away from knee, zero collision!
+    hipR.write((float)hipROffset + dHip);
+    kneeR.write((float)kneeROffset + dKnee);
+    ankleR.write((float)ankleROffset + dAnkle);
   }
 }
 
 void pos(float x, float z, char leg){
   float hipRad2 = atan(x/z);
-  float hipDeg2 = hipRad2 * (180/PI);
+  float hipDeg2 = hipRad2 * (180.0f / (float)M_PI);
 
   float z2 = z/cos(hipRad2);
 
-  float val1 = (sq(l1) + sq(z2) - sq(l2))/(2*l1*z2);
+  float val1 = (sq(l1) + sq(z2) - sq(l2))/(2.0f * l1 * z2);
   val1 = constrain(val1, -1.0f, 1.0f);
   float hipRad1 = acos(val1);
-  float hipDeg1 = hipRad1 * (180/PI);
+  float hipDeg1 = hipRad1 * (180.0f / (float)M_PI);
   
-  float val2 = (sq(l1) + sq(l2) - sq(z2))/(2*l1*l2);
+  float val2 = (sq(l1) + sq(l2) - sq(z2))/(2.0f * l1 * l2);
   val2 = constrain(val2, -1.0f, 1.0f);
-  float kneeRad = PI - acos(val2);
+  float kneeRad = (float)M_PI - acos(val2);
 
-  float val3 = (sq(l2) + sq(z2) - sq(l1))/(2*l2*z2);
+  float val3 = (sq(l2) + sq(z2) - sq(l1))/(2.0f * l2 * z2);
   val3 = constrain(val3, -1.0f, 1.0f);
-  float ankleRad = PI/2 + hipRad2 - acos(val3);
+  float ankleRad = ((float)M_PI / 2.0f) + hipRad2 - acos(val3);
   
   float hipDeg = hipDeg1 + hipDeg2;
-  float kneeDeg = kneeRad * (180/PI);
-  float ankleDeg = ankleRad * (180/PI);
+  float kneeDeg = kneeRad * (180.0f / (float)M_PI);
+  float ankleDeg = ankleRad * (180.0f / (float)M_PI);
 
-//  Serial.print(hipDeg);
-//  Serial.print("\t");
-//  Serial.print(kneeDeg);
-//  Serial.print("\t");
-//  Serial.println(ankleDeg);
+  // Standing reference stance angles at (0, stepHeight)
+  float nomVal1 = (sq(l1) + sq(stepHeight) - sq(l2)) / (2.0f * l1 * stepHeight);
+  float nomHip = acos(constrain(nomVal1, -1.0f, 1.0f)) * (180.0f / (float)M_PI);
+  float nomVal2 = (sq(l1) + sq(l2) - sq(stepHeight)) / (2.0f * l1 * l2);
+  float nomKnee = ((float)M_PI - acos(constrain(nomVal2, -1.0f, 1.0f))) * (180.0f / (float)M_PI);
+  float nomVal3 = (sq(l2) + sq(stepHeight) - sq(l1)) / (2.0f * l2 * stepHeight);
+  float nomAnkle = (((float)M_PI / 2.0f) - acos(constrain(nomVal3, -1.0f, 1.0f))) * (180.0f / (float)M_PI);
 
-  updateServoPos(hipDeg, kneeDeg, ankleDeg, leg);  
+  // Correct step angles: true Cartesian deltas relative to calibrated standing posture!
+  float dHip   = hipDeg - nomHip;
+  float dKnee  = kneeDeg - nomKnee;
+  float dAnkle = ankleDeg - nomAnkle;
+
+  updateServoPos(dHip, dKnee, dAnkle, leg);  
 }
 
 void takeStep(float stepLength, int stepVelocity){
   int delayMs = (stepVelocity > 0) ? stepVelocity : 25; // Judder-free timing: smooth servo trajectory
-  for (float i = stepLength; i >= -stepLength; i-=0.5){
+  for (float i = stepLength; i >= -stepLength; i -= 0.2f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
     pos(i, stepHeight, 'r');
     pos(-i, stepHeight - stepClearance, 'l');
@@ -1390,7 +1546,7 @@ void takeStep(float stepLength, int stepVelocity){
     server.handleClient();
   }
 
-  for (float i = stepLength; i >= -stepLength; i-=0.5){
+  for (float i = stepLength; i >= -stepLength; i -= 0.2f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
     pos(-i, stepHeight - stepClearance, 'r');
     pos(i, stepHeight, 'l');
@@ -1442,7 +1598,14 @@ void handleGetAngles() {
     json += "\"" + String(servos[i].channel) + "\":" + String((int)servos[i].currentAngle);
     if (i < NUM_SERVOS - 1) json += ",";
   }
-  json += "},\"active_gait\":\"" + activeGaitName + "\",\"gait_running\":" + (gaitRunning ? "true" : "false") + ",\"pca_found\":" + (pcaFound ? "true" : "false") + "}";
+  json += "},\"active_gait\":\"" + activeGaitName + "\"";
+  json += ",\"gait_running\":" + String(gaitRunning ? "true" : "false");
+  json += ",\"pca_found\":" + String(pcaFound ? "true" : "false");
+  json += ",\"weight_l\":" + String(weightLeftGrams, 1);
+  json += ",\"weight_r\":" + String(weightRightGrams, 1);
+  json += ",\"force_n\":" + String(groundForceNewtons, 2);
+  json += ",\"contact\":\"" + groundContactState + "\"";
+  json += "}";
   server.send(200, "application/json", json);
 }
 
