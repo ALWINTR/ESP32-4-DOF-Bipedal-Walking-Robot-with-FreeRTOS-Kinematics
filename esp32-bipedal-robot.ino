@@ -53,19 +53,21 @@ Joint servos[NUM_SERVOS] = {
 String activeGaitName = "stand";
 bool gaitRunning = false;
 
+#include "constants.h"
+
 // ==========================================
 // Planar Bipedal Inverse Kinematics (IK) Engine
 // Geometric closed-form trigonometry (Law of Cosines)
 // ==========================================
-const float L1 = 5.0f;        // Thigh link length (cm)
-const float L2 = 5.7f;        // Shin link length (cm)
+const float L1 = l1;          // Thigh link length (cm from constants.h)
+const float L2 = l2;          // Shin link length (cm from constants.h)
 float stepHeight = 10.35f;    // Standing vertical height (cm)
 float stepClearance = 0.22f;  // Foot swing lift clearance (cm, ~2.2mm)
 float stepLength = 0.65f;     // Half stride length (cm, ~6.5mm)
 float walkFreq = 0.75f;       // 0.75 Hz calm cadence (1.33s per full cycle)
 float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
-float refStepLength = 0.65f;   // Reference gait step length (cm)
+float refStepLength = 2.0f;    // Reference gait step length (cm)
 int refStepVelocity = 20;      // Reference gait step delay (ms)
 
 struct IKResult {
@@ -664,20 +666,20 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <!-- Reference Parameters Grid -->
       <div class="tuner-grid" style="margin-top: 4px;">
         <div class="tuner-card">
-          <div class="tuner-header"><span class="tuner-label">Step Length (cm)</span><span class="tuner-val" id="val-ref-stride">0.65 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-stride" min="0.30" max="1.10" value="0.65" step="0.05" oninput="setGaitParam('ref_stride', this.value)">
+          <div class="tuner-header"><span class="tuner-label">Step Length (cm)</span><span class="tuner-val" id="val-ref-stride">2.00 cm</span></div>
+          <input type="range" class="slider-styled" id="slider-ref-stride" min="0.50" max="3.00" value="2.00" step="0.10" oninput="setGaitParam('ref_stride', this.value)">
         </div>
         <div class="tuner-card">
           <div class="tuner-header"><span class="tuner-label">Step Clearance (cm)</span><span class="tuner-val" id="val-ref-clearance">0.22 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-clearance" min="0.10" max="0.38" value="0.22" step="0.02" oninput="setGaitParam('ref_knee', this.value)">
+          <input type="range" class="slider-styled" id="slider-ref-clearance" min="0.10" max="1.50" value="0.22" step="0.02" oninput="setGaitParam('ref_knee', this.value)">
         </div>
         <div class="tuner-card">
           <div class="tuner-header"><span class="tuner-label">Velocity Delay (ms)</span><span class="tuner-val" id="val-ref-delay">20 ms</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-delay" min="5" max="60" value="20" step="5" oninput="setGaitParam('ref_vel', this.value)">
+          <input type="range" class="slider-styled" id="slider-ref-delay" min="0" max="60" value="20" step="5" oninput="setGaitParam('ref_vel', this.value)">
         </div>
         <div class="tuner-card">
           <div class="tuner-header"><span class="tuner-label">Standing Height Z (cm)</span><span class="tuner-val" id="val-ref-height">10.35 cm</span></div>
-          <input type="range" class="slider-styled" id="slider-ref-height" min="10.10" max="10.55" value="10.35" step="0.05" oninput="setGaitParam('ref_height', this.value)">
+          <input type="range" class="slider-styled" id="slider-ref-height" min="9.00" max="10.70" value="10.35" step="0.05" oninput="setGaitParam('ref_height', this.value)">
         </div>
       </div>
     </section>
@@ -1156,96 +1158,99 @@ void executeJointDiagnostics() {
 
 // ==========================================
 // 4B. Direct Reference IK Walk Engine (takeStep & initialize)
-// Mapped faithfully to the user's reference code pos(x, z, leg)
+// Directly integrated from user reference inverse kinematics
 // ==========================================
-void updateServoPos(float hipDeg, float kneeDeg, float ankleDeg, char leg) {
-  IKResult ikNom = solveIK(0.0f, stepHeight);
-  float dH = hipDeg - ikNom.hipDeg;
-  float dK = kneeDeg - ikNom.kneeDeg;
 
-  if (leg == 'l') {
-    float aHip = (float)servos[3].homeAngle - dH;
-    float aKnee = (float)servos[4].homeAngle - dK;
-    float aFoot = (float)servos[5].homeAngle; // Strictly flat 94° neutral - ZERO collision with left knee!
-    aHip = constrain(aHip, 86.0f, 94.0f);  // Forward only: 94° down to 86°, never above 94° into bracket!
-    aKnee = constrain(aKnee, 84.0f, 94.0f); // Bends smoothly up to ~84°, never hyperextends past 94°!
-    aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
-    servos[3].currentAngle = aHip;  setServoAngleDirect(4, aHip);
-    servos[4].currentAngle = aKnee; setServoAngleDirect(8, aKnee);
-    servos[5].currentAngle = aFoot; setServoAngleDirect(15, aFoot);
-  } else if (leg == 'r') {
-    float aHip = (float)servos[0].homeAngle + dH;
-    float aKnee = (float)servos[1].homeAngle + dK;
-    float aFoot = (float)servos[2].homeAngle; // Strictly flat 94° neutral - ZERO collision with right knee!
-    aHip = constrain(aHip, 94.0f, 102.0f); // Forward only: 94° up to 102°, never below 94° into bracket!
-    aKnee = constrain(aKnee, 8.0f, 18.0f);  // Bends smoothly up to ~18°, never hyperextends below 8°!
-    aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
-    servos[0].currentAngle = aHip;  setServoAngleDirect(0, aHip);
-    servos[1].currentAngle = aKnee; setServoAngleDirect(1, aKnee);
-    servos[2].currentAngle = aFoot; setServoAngleDirect(12, aFoot);
+struct ServoProxy {
+  int channel;
+  int servoIndex;
+  void write(int angle) {
+    write((float)angle);
+  }
+  void write(float angle) {
+    if (servoIndex >= 0 && servoIndex < NUM_SERVOS) {
+      servos[servoIndex].currentAngle = angle;
+    }
+    setServoAngleDirect(channel, angle);
+  }
+  void attach(int pin) {}
+};
+
+ServoProxy hipL   = {4,  3};
+ServoProxy hipR   = {0,  0};
+ServoProxy kneeL  = {8,  4};
+ServoProxy kneeR  = {1,  1};
+ServoProxy ankleL = {15, 5};
+ServoProxy ankleR = {12, 2};
+
+void updateServoPos(int target1, int target2, int target3, char leg){
+  if (leg == 'l'){
+    hipL.write(hipLOffset - target1);
+    kneeL.write(kneeLOffset - target2);
+    ankleL.write(2*ankleLOffset - target3);
+  }
+  else if (leg == 'r'){
+    hipR.write(hipROffset + target1);
+    kneeR.write(kneeROffset + target2);
+    ankleR.write(target3);
   }
 }
 
-void pos(float x, float z, char leg) {
-  float hipRad2 = atan2(x, z);
-  float hipDeg2 = hipRad2 * (180.0f / (float)M_PI);
+void pos(float x, float z, char leg){
+  float hipRad2 = atan(x/z);
+  float hipDeg2 = hipRad2 * (180/PI);
 
-  float z2 = sqrt(x * x + z * z);
+  float z2 = z/cos(hipRad2);
 
-  float val1 = (L1 * L1 + z2 * z2 - L2 * L2) / (2.0f * L1 * z2);
+  float val1 = (sq(l1) + sq(z2) - sq(l2))/(2*l1*z2);
   val1 = constrain(val1, -1.0f, 1.0f);
   float hipRad1 = acos(val1);
-  float hipDeg1 = hipRad1 * (180.0f / (float)M_PI);
-
-  float val2 = (L1 * L1 + L2 * L2 - z2 * z2) / (2.0f * L1 * L2);
-  val2 = constrain(val2, -1.0f, 1.0f);
-  float kneeRad = (float)M_PI - acos(val2);
-  float kneeDeg = kneeRad * (180.0f / (float)M_PI);
-
-  float val3 = (L2 * L2 + z2 * z2 - L1 * L1) / (2.0f * L2 * z2);
-  val3 = constrain(val3, -1.0f, 1.0f);
-  float ankleRad = ((float)M_PI / 2.0f) + hipRad2 - acos(val3);
-  float ankleDeg = ankleRad * (180.0f / (float)M_PI);
-
-  float hipDeg = hipDeg1 + hipDeg2;
-  updateServoPos(hipDeg, kneeDeg, ankleDeg, leg);
-}
-
-void takeStep(float sLength, int sVelocity) {
-  const int numSteps = 14;
+  float hipDeg1 = hipRad1 * (180/PI);
   
-  // Phase 1: Right Leg Steps Forward in Sinusoidal Arc, Left Leg Solid Stance on Ground
-  for (int step = 0; step <= numSteps; step++) {
-    if (!gaitRunning && activeGaitName != "ref_step") break;
-    float u = (float)step / (float)numSteps; // 0.0 to 1.0
-    float xr = sLength * sin(u * (float)M_PI);
-    float zr = stepHeight - (stepClearance * sin(u * (float)M_PI));
-    pos(xr, zr, 'r');
-    pos(0.0f, stepHeight, 'l');
+  float val2 = (sq(l1) + sq(l2) - sq(z2))/(2*l1*l2);
+  val2 = constrain(val2, -1.0f, 1.0f);
+  float kneeRad = PI - acos(val2);
 
-    delay(sVelocity);
+  float val3 = (sq(l2) + sq(z2) - sq(l1))/(2*l2*z2);
+  val3 = constrain(val3, -1.0f, 1.0f);
+  float ankleRad = PI/2 + hipRad2 - acos(val3);
+  
+  float hipDeg = hipDeg1 + hipDeg2;
+  float kneeDeg = kneeRad * (180/PI);
+  float ankleDeg = ankleRad * (180/PI);
+
+//  Serial.print(hipDeg);
+//  Serial.print("\t");
+//  Serial.print(kneeDeg);
+//  Serial.print("\t");
+//  Serial.println(ankleDeg);
+
+  updateServoPos(hipDeg, kneeDeg, ankleDeg, leg);  
+}
+
+void takeStep(float stepLength, int stepVelocity){
+  for (float i = stepLength; i >= -stepLength; i-=0.5){
+    if (!gaitRunning && activeGaitName != "ref_step") break;
+    pos(i, stepHeight, 'r');
+    pos(-i, stepHeight - stepClearance, 'l');
+    delay(stepVelocity);
     server.handleClient();
   }
 
-  // Phase 2: Left Leg Steps Forward in Sinusoidal Arc, Right Leg Solid Stance on Ground
-  for (int step = 0; step <= numSteps; step++) {
+  for (float i = stepLength; i >= -stepLength; i-=0.5){
     if (!gaitRunning && activeGaitName != "ref_step") break;
-    float u = (float)step / (float)numSteps; // 0.0 to 1.0
-    float xl = sLength * sin(u * (float)M_PI);
-    float zl = stepHeight - (stepClearance * sin(u * (float)M_PI));
-    pos(xl, zl, 'l');
-    pos(0.0f, stepHeight, 'r');
-
-    delay(sVelocity);
+    pos(-i, stepHeight - stepClearance, 'r');
+    pos(i, stepHeight, 'l');
+    delay(stepVelocity);
     server.handleClient();
   }
 }
 
-void initialize() {
-  for (float i = 10.65f; i >= stepHeight; i -= 0.05f) {
+void initialize(){
+  for (float i = 10.7; i >= stepHeight; i-=0.1){
     pos(0, i, 'l');
     pos(0, i, 'r');
-    delay(20);
+    delay(15);
     server.handleClient();
   }
   parkStand();
