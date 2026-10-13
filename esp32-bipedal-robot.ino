@@ -1296,6 +1296,27 @@ void setup() {
 void loop() {
   server.handleClient();
 
+  // USB Serial Command Listener (allows controlling robot via USB cable)
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "step") {
+      Serial.println("[CMD] Executing Single Full Stride...");
+      executeSingleHumanStride();
+    } else if (cmd == "walk") {
+      Serial.println("[CMD] Continuous Walk Started.");
+      gaitRunning = true;
+      activeGaitName = "walk";
+      walkStartTime = millis();
+    } else if (cmd == "stand" || cmd == "stop") {
+      Serial.println("[CMD] Settling to Stand Neutral.");
+      parkStand();
+    } else if (cmd == "test") {
+      Serial.println("[CMD] Running Joint Diagnostics...");
+      executeJointDiagnostics();
+    }
+  }
+
   // Auto-reconnect PCA9685 whenever it powers up or reconnects
   static unsigned long lastPcaCheck = 0;
   if (!pcaFound && (millis() - lastPcaCheck > 1500)) {
