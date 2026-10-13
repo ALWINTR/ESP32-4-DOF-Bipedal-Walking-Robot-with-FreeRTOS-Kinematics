@@ -1029,17 +1029,17 @@ void updateHumanLikeWalk() {
   // Right Foot: dynamically flexes away from right knee in proportion to knee bend (zero bracket stick)
   float aFootR = (float)servos[2].homeAngle - (footFlexRatio * dKneeR);
 
-  float aHipL  = (float)servos[3].homeAngle - (ikL.hipDeg - ikNom.hipDeg);
+  float aHipL  = (float)servos[3].homeAngle + (ikL.hipDeg - ikNom.hipDeg);
   float aKneeL = (float)servos[4].homeAngle - dKneeL;
   // Left Foot: dynamically flexes backward away from left knee in proportion to knee bend (zero bracket stick)
   float aFootL = (float)servos[5].homeAngle - (footFlexRatio * dKneeL);
 
   // Strict Physical Safety Constraints (Collision-free dynamic ranges)
-  aHipR  = constrain(aHipR,  94.0f, 102.0f); // Never swings backward below 94° into chassis bracket
+  aHipR  = constrain(aHipR,  94.0f, 102.0f); // Forward swing only, never backward below 94° into chassis bracket
   aKneeR = constrain(aKneeR,  8.0f,  18.0f); // Bends up to ~18°, returns to 8° neutral
   aFootR = constrain(aFootR, 88.0f,  95.0f); // Flexes down away from knee, returns to 94° flat ground
 
-  aHipL  = constrain(aHipL,  86.0f,  94.0f); // Never swings backward above 94° into chassis bracket
+  aHipL  = constrain(aHipL,  94.0f, 102.0f); // Forward swing only, never backward below 94° into chassis bracket
   aKneeL = constrain(aKneeL, 84.0f,  94.0f); // Bends down to ~84°, returns to 94° neutral
   aFootL = constrain(aFootL, 88.0f,  95.0f); // Flexes down away from knee, returns to 94° flat ground
 
@@ -1083,9 +1083,9 @@ void executeJointDiagnostics() {
   setServoAngleDirect(12, 92.0f); servos[2].currentAngle = 92.0f; delay(1000);
   setServoAngleDirect(12, 94.0f); servos[2].currentAngle = 94.0f; delay(500);
 
-  // 4. Left Hip (CH 4): 94° -> 88.0° -> 94°
-  setServoAngleDirect(4, 88.0f); servos[3].currentAngle = 88.0f; delay(1000);
-  setServoAngleDirect(4, 94.0f); servos[3].currentAngle = 94.0f; delay(500);
+  // 4. Left Hip (CH 4): 94° -> 100.0° -> 94° (Smooth forward swing)
+  setServoAngleDirect(4, 100.0f); servos[3].currentAngle = 100.0f; delay(1000);
+  setServoAngleDirect(4, 94.0f);  servos[3].currentAngle = 94.0f;  delay(500);
 
   // 5. Left Knee (CH 8): 94° -> 87.5° -> 94° (Gentle micro-lift, zero collision)
   setServoAngleDirect(8, 87.5f); servos[4].currentAngle = 87.5f; delay(1000);
