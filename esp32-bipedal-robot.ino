@@ -58,19 +58,16 @@ bool gaitRunning = false;
 // Right Leg: CH 0 (Hip 94°), CH 1 (Knee 8°),  CH 12 (Foot 94°)
 // Left Leg:  CH 4 (Hip 94°), CH 8 (Knee 94°), CH 15 (Foot 94°)
 // ==========================================
-float walkFreq    = 0.65f; // 0.65 Hz calm cadence (1.54s per full stride cycle)
-float strideAmp   = 6.0f;  // Forward hip swing amplitude (degrees)
-float stancePush  = 2.0f;  // Stance backward ground push (degrees)
-float kneeLift    = 7.0f;  // Knee clearance micro-lift (degrees)
-float footLevel   = 2.2f;  // Dynamic foot horizontal leveling (degrees)
-float currentGaitScale = 0.0f; // Smooth anti-jerk startup and stop ramp
+float walkFreq         = 0.65f; // Cadence frequency (Hz)
+float stepLength       = 1.2f;  // Cartesian stride length (cm)
+float stepClearance    = 0.35f; // Cartesian foot ground clearance lift (cm)
+float stepHeight       = 10.55f;// Cartesian standing stance height (cm)
+float currentGaitScale = 0.0f;  // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
 
-// User Reference Inverse Kinematics Parameters
-float l1 = 5.0f;
-float l2 = 5.7f;
-float stepHeight = 10.0f;
-float stepClearance = 0.8f;
+// Leg Link Dimensions
+float l1 = 5.0f; // Thigh length (cm)
+float l2 = 5.7f; // Shin length (cm)
 
 int hipLOffset   = 94;
 int kneeLOffset  = 94;
@@ -79,6 +76,40 @@ int ankleLOffset = 94;
 int hipROffset   = 94;
 int kneeROffset  = 8;
 int ankleROffset = 94;
+
+struct IKResult {
+  float hipDeg;
+  float kneeDeg;
+  float ankleDeg;
+};
+
+IKResult solveIK(float x, float z) {
+  IKResult res;
+  float hipRad2 = atan2(x, z);
+  float hipDeg2 = hipRad2 * (180.0f / (float)M_PI);
+
+  float z2 = sqrt(x * x + z * z);
+
+  float val1 = (l1 * l1 + z2 * z2 - l2 * l2) / (2.0f * l1 * z2);
+  val1 = constrain(val1, -1.0f, 1.0f);
+  float hipRad1 = acos(val1);
+  float hipDeg1 = hipRad1 * (180.0f / (float)M_PI);
+
+  float val2 = (l1 * l1 + l2 * l2 - z2 * z2) / (2.0f * l1 * l2);
+  val2 = constrain(val2, -1.0f, 1.0f);
+  float kneeRad = (float)M_PI - acos(val2);
+  float kneeDeg = kneeRad * (180.0f / (float)M_PI);
+
+  float val3 = (l2 * l2 + z2 * z2 - l1 * l1) / (2.0f * l2 * z2);
+  val3 = constrain(val3, -1.0f, 1.0f);
+  float ankleRad = ((float)M_PI / 2.0f) + hipRad2 - acos(val3);
+  float ankleDeg = ankleRad * (180.0f / (float)M_PI);
+
+  res.hipDeg = hipDeg1 + hipDeg2;
+  res.kneeDeg = kneeDeg;
+  res.ankleDeg = ankleDeg;
+  return res;
+}
 
 void loadSavedOffsets() {
   preferences.begin("biped_chmap", false);
@@ -1134,7 +1165,7 @@ void updateHumanLikeWalk() {
 
   // 1. Smooth Anti-Jerk Envelope (eases smoothly into motion)
   if (gaitRunning) {
-    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.035f);
+    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.04f);
   } else {
     if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.05f);
   }
@@ -1144,68 +1175,73 @@ void updateHumanLikeWalk() {
   if (phase < 0.0f) phase += 2.0f * (float)M_PI;
 
   float sinP = sin(phase);
+  float cosP = cos(phase);
 
-  // Dynamic Trajectory Amplitudes scaled by smooth envelope
-  float effStride = strideAmp  * currentGaitScale; // Forward swing amplitude
-  float effPush   = stancePush * currentGaitScale; // Ground propulsion push
-  float effLift   = kneeLift   * currentGaitScale; // Knee clearance micro-lift
-  float effFoot   = footLevel  * currentGaitScale; // Foot horizontal leveling
+  // Scaled Cartesian Step Parameters (in cm)
+  float curStepLen = (stepLength * 0.5f) * currentGaitScale; // Half-stride amplitude (cm)
+  float curClear   = stepClearance * currentGaitScale;        // Foot clearance lift (cm)
+  float curHeight  = stepHeight;                              // Stance floor level (cm)
 
-  float aHipR, aKneeR, aFootR;
-  float aHipL, aKneeL, aFootL;
+  float xr, zr;
+  float xl, zl;
 
   if (sinP >= 0.0f) {
     // -------------------------------------------------------------
-    // PHASE 1 (0 to PI): RIGHT LEG SWING FORWARD, LEFT LEG STANCE PUSH
+    // PHASE 1 (0 to PI): RIGHT LEG SWING (AIR), LEFT LEG STANCE (GROUND)
     // -------------------------------------------------------------
-    float sw = sinP; // Smooth 0 -> 1 -> 0 half-sine arc
+    // Right foot lifts and swings forward in an arc from -curStepLen to +curStepLen
+    xr = -curStepLen * cosP;
+    zr = curHeight - (curClear * sinP);
 
-    // Right Leg (Swing forward in the air):
-    // - Right Hip swings FORWARD (+): 94° -> 100° -> 94°
-    aHipR  = (float)servos[0].homeAngle + (sw * effStride);
-    // - Right Knee lifts UPWARDS (+): 8° -> 15° -> 8°
-    aKneeR = (float)servos[1].homeAngle + (sw * effLift);
-    // - Right Foot levels horizontally (-): 94° -> 91.8° -> 94°
-    aFootR = (float)servos[2].homeAngle - (sw * effFoot);
-
-    // Left Leg (Stance on floor - pushes body forward):
-    // - Left Hip (mirrored) pushes BACKWARD (+): 94° -> 96° -> 94°
-    aHipL  = (float)servos[3].homeAngle + (sw * effPush);
-    // - Left Knee stays solid locked at baseline (94°) supporting weight
-    aKneeL = (float)servos[4].homeAngle;
-    // - Left Foot stays solidly flat on ground (94°) providing forward traction
-    aFootL = (float)servos[5].homeAngle;
+    // Left foot stance on ground: drives pelvis forward from +curStepLen to -curStepLen
+    xl = curStepLen * cosP;
+    zl = curHeight;
   } else {
     // -------------------------------------------------------------
-    // PHASE 2 (PI to 2*PI): LEFT LEG SWING FORWARD, RIGHT LEG STANCE PUSH
+    // PHASE 2 (PI to 2*PI): LEFT LEG SWING (AIR), RIGHT LEG STANCE (GROUND)
     // -------------------------------------------------------------
-    float sw = -sinP; // Smooth 0 -> 1 -> 0 half-sine arc
+    // Right foot stance on ground: drives pelvis forward
+    xr = -curStepLen * cosP;
+    zr = curHeight;
 
-    // Left Leg (Swing forward in the air):
-    // - Left Hip (mirrored) swings FORWARD (-): 94° -> 88° -> 94°
-    aHipL  = (float)servos[3].homeAngle - (sw * effStride);
-    // - Left Knee (mirrored) lifts UPWARDS (-): 94° -> 87° -> 94°
-    aKneeL = (float)servos[4].homeAngle - (sw * effLift);
-    // - Left Foot levels horizontally (-): 94° -> 91.8° -> 94°
-    aFootL = (float)servos[5].homeAngle - (sw * effFoot);
-
-    // Right Leg (Stance on floor - pushes body forward):
-    // - Right Hip pushes BACKWARD (-): 94° -> 92° -> 94°
-    aHipR  = (float)servos[0].homeAngle - (sw * effPush);
-    // - Right Knee stays solid locked at baseline (8°) supporting weight
-    aKneeR = (float)servos[1].homeAngle;
-    // - Right Foot stays solidly flat on ground (94°) providing forward traction
-    aFootR = (float)servos[2].homeAngle;
+    // Left foot lifts and swings forward in an arc from -curStepLen to +curStepLen
+    xl = curStepLen * cosP;
+    zl = curHeight - (curClear * (-sinP));
   }
 
-  // Strict Physical Safety Constraints (Collision-free dynamic ranges)
-  aHipR  = constrain(aHipR,  91.0f, 101.0f); // Never hits chassis bracket
-  aKneeR = constrain(aKneeR,   8.0f,  16.0f); // Zero shin bracket collision
-  aFootR = constrain(aFootR,  91.0f,  95.0f); // Stays flat/level with floor, zero backward drag
+  // 2. Solve Inverse Kinematics for Both Legs in Real Time
+  IKResult ikR   = solveIK(xr, zr);
+  IKResult ikL   = solveIK(xl, zl);
+  IKResult ikNom = solveIK(0.0f, curHeight);
 
-  aHipL  = constrain(aHipL,  87.0f,  97.0f); // Never hits chassis bracket (mirrored)
-  aKneeL = constrain(aKneeL,  86.0f,  95.0f); // Zero shin bracket collision (mirrored)
-  aFootL = constrain(aFootL,  91.0f,  95.0f); // Stays flat/level with floor, zero backward drag
+  // Joint angle deltas from nominal standing pose
+  float dHr = ikR.hipDeg - ikNom.hipDeg;
+  float dKr = ikR.kneeDeg - ikNom.kneeDeg;
+  float dAr = ikR.ankleDeg - ikNom.ankleDeg;
+
+  float dHl = ikL.hipDeg - ikNom.hipDeg;
+  float dKl = ikL.kneeDeg - ikNom.kneeDeg;
+  float dAl = ikL.ankleDeg - ikNom.ankleDeg;
+
+  // 3. Map IK Angles to Physical Servo Positions (Genuine Human Locomotion)
+  // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
+  float aHipR  = (float)servos[0].homeAngle + dHr;
+  float aKneeR = (float)servos[1].homeAngle + dKr;
+  float aFootR = (float)servos[2].homeAngle + dAr;
+
+  // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
+  float aHipL  = (float)servos[3].homeAngle - dHl;
+  float aKneeL = (float)servos[4].homeAngle - dKl;
+  float aFootL = (float)servos[5].homeAngle + dAl;
+
+  // Strict Physical Safety Constraints (Collision-free dynamic ranges, zero bracket binding)
+  aHipR  = constrain(aHipR,  82.0f, 108.0f);
+  aKneeR = constrain(aKneeR,  3.0f,  26.0f);
+  aFootR = constrain(aFootR, 84.0f, 104.0f);
+
+  aHipL  = constrain(aHipL,  82.0f, 108.0f);
+  aKneeL = constrain(aKneeL, 76.0f,  99.0f);
+  aFootL = constrain(aFootL, 84.0f, 104.0f);
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1292,23 +1328,23 @@ struct ServoProxy {
   void attach(int pin) {}
 };
 
-ServoProxy hipL   = {4,  3, 84.0f, 102.0f};
-ServoProxy hipR   = {0,  0, 88.0f, 106.0f};
-ServoProxy kneeL  = {8,  4, 80.0f,  95.0f};
-ServoProxy kneeR  = {1,  1,  8.0f,  22.0f};
-ServoProxy ankleL = {15, 5, 88.0f, 100.0f};
-ServoProxy ankleR = {12, 2, 88.0f, 100.0f};
+ServoProxy hipL   = {4,  3, 80.0f, 110.0f};
+ServoProxy hipR   = {0,  0, 80.0f, 110.0f};
+ServoProxy kneeL  = {8,  4, 74.0f,  99.0f};
+ServoProxy kneeR  = {1,  1,  3.0f,  28.0f};
+ServoProxy ankleL = {15, 5, 84.0f, 104.0f};
+ServoProxy ankleR = {12, 2, 84.0f, 104.0f};
 
 void updateServoPos(int target1, int target2, int target3, char leg){
   if (leg == 'l'){
     hipL.write(hipLOffset - target1);
     kneeL.write(kneeLOffset - target2);
-    ankleL.write(2*ankleLOffset - target3);
+    ankleL.write(ankleLOffset + (target3 - 90)); // Leveling flex away from knee, zero collision!
   }
   else if (leg == 'r'){
     hipR.write(hipROffset + target1);
     kneeR.write(kneeROffset + target2);
-    ankleR.write(target3);
+    ankleR.write(ankleROffset + (target3 - 90)); // Leveling flex away from knee, zero collision!
   }
 }
 
@@ -1490,10 +1526,9 @@ void handleSetGaitParam() {
   String param = server.arg("param");
   float val = server.arg("val").toFloat();
   if (param == "freq" || param == "speed") walkFreq = val;
-  else if (param == "stride" || param == "length") strideAmp = val;
-  else if (param == "knee" || param == "clearance" || param == "lift") kneeLift = val;
-  else if (param == "push") stancePush = val;
-  else if (param == "foot" || param == "ankle" || param == "level") footLevel = val;
+  else if (param == "stride" || param == "length") stepLength = val;
+  else if (param == "knee" || param == "clearance" || param == "lift") stepClearance = val;
+  else if (param == "height" || param == "stance" || param == "ankle") stepHeight = val;
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -1508,8 +1543,8 @@ void setup() {
   loadSavedOffsets();
 
   Wire.begin(21, 22);
-  Wire.setClock(100000); // 100kHz standard speed for stable I2C
-  Wire.setTimeOut(100);
+  Wire.setClock(400000); // 400kHz Fast Mode for ultra-responsive servo I2C and zero web latency
+  Wire.setTimeOut(50);
 
   Serial.println("Scanning I2C bus (SDA=21, SCL=22)...");
   int i2cCount = 0;
@@ -1533,9 +1568,9 @@ void setup() {
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
-  // Support both local networks - automatically connects to user's active network (MATHA ELECTRONICS_ Dwan)
-  wifiMulti.addAP("MATHA ELECTRONICS_ Dwan", "qwerty09");
+  // Support both local networks - prioritized for user's active PC network (MATHA BSNL FTTH)
   wifiMulti.addAP("MATHA BSNL FTTH", "qwerty09");
+  wifiMulti.addAP("MATHA ELECTRONICS_ Dwan", "qwerty09");
 
   Serial.println("Connecting to WiFi (trying MATHA ELECTRONICS_ Dwan & MATHA BSNL FTTH)...");
   unsigned long startWifi = millis();
@@ -1630,11 +1665,27 @@ void loop() {
   }
 
   if (gaitRunning) {
-    if (activeGaitName == "walk" || activeGaitName == "forward") {
-      updateHumanLikeWalk();
-      delay(15);
-    } else if (activeGaitName == "ref_walk") {
-      takeStep(2, 0);
+    static unsigned long lastGaitUpdate = 0;
+    if (millis() - lastGaitUpdate >= 25) { // 40Hz clean servo trajectory, zero blocking delay
+      lastGaitUpdate = millis();
+      if (activeGaitName == "walk" || activeGaitName == "forward") {
+        updateHumanLikeWalk();
+      } else if (activeGaitName == "ref_walk") {
+        static float walkI = stepLength;
+        static int walkPhase = 0;
+        if (walkPhase == 0) {
+          pos(walkI, stepHeight, 'r');
+          pos(-walkI, stepHeight - stepClearance, 'l');
+        } else {
+          pos(-walkI, stepHeight - stepClearance, 'r');
+          pos(walkI, stepHeight, 'l');
+        }
+        walkI -= 0.2f;
+        if (walkI < -stepLength) {
+          walkI = stepLength;
+          walkPhase = 1 - walkPhase;
+        }
+      }
     }
   }
 
