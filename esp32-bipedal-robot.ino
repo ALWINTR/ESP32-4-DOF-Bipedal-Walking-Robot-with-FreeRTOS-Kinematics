@@ -984,63 +984,66 @@ void updateHumanLikeWalk() {
 
   // 1. Smooth Anti-Jerk Envelope (eases smoothly into motion)
   if (gaitRunning) {
-    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.05f);
+    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.04f);
   } else {
-    if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.08f);
+    if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.06f);
   }
 
   // Continuous Gait Phase (0 to 2*PI)
   float phase = fmod(2.0f * (float)M_PI * walkFreq * t, 2.0f * (float)M_PI);
   if (phase < 0.0f) phase += 2.0f * (float)M_PI;
 
-  IKResult ikNom = solveIK(0.0f, stepHeight);
+  float sinP = sin(phase);
 
-  // Synchronized Bipedal Trajectory (Unipolar Forward IK - Zero Rear Bracket Collision)
-  float effectiveLen = stepLength * currentGaitScale;
-  float effectiveClr = stepClearance * currentGaitScale;
+  // Dynamic Trajectory Amplitudes (Harmonic Bipedal Locomotion)
+  float strideDeg = 5.5f * currentGaitScale; // Forward swing amplitude (degrees)
+  float pushDeg   = 2.0f * currentGaitScale; // Stance ground propulsion push (degrees)
+  float liftDeg   = 5.0f * currentGaitScale; // Knee clearance micro-lift (degrees)
+  float footLevel = 1.0f * currentGaitScale; // Foot horizontal leveling (degrees)
 
-  float xr = 0.0f, zr = stepHeight;
-  float xl = 0.0f, zl = stepHeight;
+  float aHipR, aKneeR, aFootR;
+  float aHipL, aKneeL, aFootL;
 
-  if (phase < (float)M_PI) {
-    // Right Leg Swing forward in sinusoidal arc, Left Leg Solid Stance
-    xr = effectiveLen * sin(phase);
-    zr = stepHeight - (effectiveClr * sin(phase));
-    xl = 0.0f;
-    zl = stepHeight;
+  if (sinP >= 0.0f) {
+    // -------------------------------------------------------------
+    // PHASE 1 (0 to PI): RIGHT LEG SWING FORWARD, LEFT LEG STANCE PUSH
+    // -------------------------------------------------------------
+    float sw = sinP; // Smooth 0 -> 1 -> 0 half-sine arc
+
+    // Right Leg (Swing forward in the air):
+    aHipR  = (float)servos[0].homeAngle + (sw * strideDeg);
+    aKneeR = (float)servos[1].homeAngle + (sw * liftDeg);
+    aFootR = (float)servos[2].homeAngle - (sw * footLevel);
+
+    // Left Leg (Stance on floor - pushes body forward):
+    aHipL  = (float)servos[3].homeAngle - (sw * pushDeg);
+    aKneeL = (float)servos[4].homeAngle;
+    aFootL = (float)servos[5].homeAngle;
   } else {
-    // Left Leg Swing forward in sinusoidal arc, Right Leg Solid Stance
-    float subPhase = phase - (float)M_PI;
-    xl = effectiveLen * sin(subPhase);
-    zl = stepHeight - (effectiveClr * sin(subPhase));
-    xr = 0.0f;
-    zr = stepHeight;
+    // -------------------------------------------------------------
+    // PHASE 2 (PI to 2*PI): LEFT LEG SWING FORWARD, RIGHT LEG STANCE PUSH
+    // -------------------------------------------------------------
+    float sw = -sinP; // Smooth 0 -> 1 -> 0 half-sine arc
+
+    // Left Leg (Swing forward in the air):
+    aHipL  = (float)servos[3].homeAngle + (sw * strideDeg);
+    aKneeL = (float)servos[4].homeAngle - (sw * liftDeg);
+    aFootL = (float)servos[5].homeAngle - (sw * footLevel);
+
+    // Right Leg (Stance on floor - pushes body forward):
+    aHipR  = (float)servos[0].homeAngle - (sw * pushDeg);
+    aKneeR = (float)servos[1].homeAngle;
+    aFootR = (float)servos[2].homeAngle;
   }
 
-  IKResult ikR = solveIK(xr, zr);
-  IKResult ikL = solveIK(xl, zl);
-
-  float dKneeR = max(0.0f, ikR.kneeDeg - ikNom.kneeDeg);
-  float dKneeL = max(0.0f, ikL.kneeDeg - ikNom.kneeDeg);
-
-  float aHipR  = (float)servos[0].homeAngle + (ikR.hipDeg - ikNom.hipDeg);
-  float aKneeR = (float)servos[1].homeAngle + dKneeR;
-  // Right Foot: dynamically flexes away from right knee in proportion to knee bend (zero bracket stick)
-  float aFootR = (float)servos[2].homeAngle - (footFlexRatio * dKneeR);
-
-  float aHipL  = (float)servos[3].homeAngle + (ikL.hipDeg - ikNom.hipDeg);
-  float aKneeL = (float)servos[4].homeAngle - dKneeL;
-  // Left Foot: dynamically flexes backward away from left knee in proportion to knee bend (zero bracket stick)
-  float aFootL = (float)servos[5].homeAngle - (footFlexRatio * dKneeL);
-
   // Strict Physical Safety Constraints (Collision-free dynamic ranges)
-  aHipR  = constrain(aHipR,  94.0f, 102.0f); // Forward swing only, never backward below 94° into chassis bracket
-  aKneeR = constrain(aKneeR,  8.0f,  18.0f); // Bends up to ~18°, returns to 8° neutral
-  aFootR = constrain(aFootR, 88.0f,  95.0f); // Flexes down away from knee, returns to 94° flat ground
+  aHipR  = constrain(aHipR,  91.0f, 101.0f); // Never hits chassis bracket
+  aKneeR = constrain(aKneeR,   8.0f,  15.0f); // Zero shin bracket collision
+  aFootR = constrain(aFootR,  92.0f,  95.0f); // Stays flat/level with floor, zero backward drag
 
-  aHipL  = constrain(aHipL,  94.0f, 102.0f); // Forward swing only, never backward below 94° into chassis bracket
-  aKneeL = constrain(aKneeL, 84.0f,  94.0f); // Bends down to ~84°, returns to 94° neutral
-  aFootL = constrain(aFootL, 88.0f,  95.0f); // Flexes down away from knee, returns to 94° flat ground
+  aHipL  = constrain(aHipL,  91.0f, 101.0f); // Never hits chassis bracket
+  aKneeL = constrain(aKneeL,  87.0f,  94.0f); // Zero shin bracket collision
+  aFootL = constrain(aFootL,  92.0f,  95.0f); // Stays flat/level with floor, zero backward drag
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
