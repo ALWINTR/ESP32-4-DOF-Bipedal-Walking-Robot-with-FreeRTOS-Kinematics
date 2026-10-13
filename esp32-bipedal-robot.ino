@@ -1055,17 +1055,27 @@ void updateHumanLikeWalk() {
 
   IKResult ikNom = solveIK(0.0f, stepHeight);
 
-  // Synchronized Bipedal Trajectory (Opposite phases for Right and Left)
+  // Synchronized Bipedal Trajectory (Unipolar Forward IK - Zero Rear Bracket Collision)
   float effectiveLen = stepLength * currentGaitScale;
   float effectiveClr = stepClearance * currentGaitScale;
 
-  // Right Leg: Swing during [0, PI], Stance during [PI, 2*PI]
-  float xr = -effectiveLen * cos(phase);
-  float zr = (phase < (float)M_PI) ? (stepHeight - effectiveClr * sin(phase)) : stepHeight;
+  float xr = 0.0f, zr = stepHeight;
+  float xl = 0.0f, zl = stepHeight;
 
-  // Left Leg: Stance during [0, PI], Swing during [PI, 2*PI]
-  float xl = effectiveLen * cos(phase);
-  float zl = (phase >= (float)M_PI) ? (stepHeight - effectiveClr * sin(phase - (float)M_PI)) : stepHeight;
+  if (phase < (float)M_PI) {
+    // Right Leg Swing forward in sinusoidal arc, Left Leg Solid Stance
+    xr = effectiveLen * sin(phase);
+    zr = stepHeight - (effectiveClr * sin(phase));
+    xl = 0.0f;
+    zl = stepHeight;
+  } else {
+    // Left Leg Swing forward in sinusoidal arc, Right Leg Solid Stance
+    float subPhase = phase - (float)M_PI;
+    xl = effectiveLen * sin(subPhase);
+    zl = stepHeight - (effectiveClr * sin(subPhase));
+    xr = 0.0f;
+    zr = stepHeight;
+  }
 
   IKResult ikR = solveIK(xr, zr);
   IKResult ikL = solveIK(xl, zl);
@@ -1080,13 +1090,13 @@ void updateHumanLikeWalk() {
   float aFootR = (float)servos[2].homeAngle; // 94.0° flat ground plane
   float aFootL = (float)servos[5].homeAngle; // 94.0° flat ground plane
 
-  // Strict Physical Safety Constraints (Guarantees zero bracket collisions)
-  aHipR  = constrain(aHipR,  87.0f, 101.0f);
-  aKneeR = constrain(aKneeR,  7.0f,  17.5f); // Bends smoothly up to ~17.5°, extends to 7° in stance
+  // Strict Physical Safety Constraints (Forward-only; eliminates rear bracket jam)
+  aHipR  = constrain(aHipR,  94.0f, 102.0f); // Never swings backward below 94° into bracket
+  aKneeR = constrain(aKneeR,  8.0f,  18.0f); // Bends smoothly up to ~18°, never hyperextends below 8°
   aFootR = constrain(aFootR, 93.5f,  95.0f); // Strictly flat 94.0° neutral
 
-  aHipL  = constrain(aHipL,  87.0f, 101.0f);
-  aKneeL = constrain(aKneeL, 84.5f,  95.0f); // Bends smoothly up to ~84.5°, extends to 95° in stance
+  aHipL  = constrain(aHipL,  86.0f,  94.0f); // Never swings backward above 94° into bracket
+  aKneeL = constrain(aKneeL, 84.0f,  94.0f); // Bends smoothly down to ~84°, never hyperextends past 94°
   aFootL = constrain(aFootL, 93.5f,  95.0f); // Strictly flat 94.0° neutral
 
   // Apply directly to PWM servo driver
@@ -1157,8 +1167,8 @@ void updateServoPos(float hipDeg, float kneeDeg, float ankleDeg, char leg) {
     float aHip = (float)servos[3].homeAngle - dH;
     float aKnee = (float)servos[4].homeAngle - dK;
     float aFoot = (float)servos[5].homeAngle; // Strictly flat 94° neutral - ZERO collision with left knee!
-    aHip = constrain(aHip, 87.0f, 101.0f);
-    aKnee = constrain(aKnee, 84.0f, 95.0f); // Bends smoothly up to ~84°, extends to 95° in stance
+    aHip = constrain(aHip, 86.0f, 94.0f);  // Forward only: 94° down to 86°, never above 94° into bracket!
+    aKnee = constrain(aKnee, 84.0f, 94.0f); // Bends smoothly up to ~84°, never hyperextends past 94°!
     aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
     servos[3].currentAngle = aHip;  setServoAngleDirect(4, aHip);
     servos[4].currentAngle = aKnee; setServoAngleDirect(8, aKnee);
@@ -1167,8 +1177,8 @@ void updateServoPos(float hipDeg, float kneeDeg, float ankleDeg, char leg) {
     float aHip = (float)servos[0].homeAngle + dH;
     float aKnee = (float)servos[1].homeAngle + dK;
     float aFoot = (float)servos[2].homeAngle; // Strictly flat 94° neutral - ZERO collision with right knee!
-    aHip = constrain(aHip, 87.0f, 101.0f);
-    aKnee = constrain(aKnee, 7.0f, 18.0f);  // Bends smoothly up to ~18°, extends to 7° in stance
+    aHip = constrain(aHip, 94.0f, 102.0f); // Forward only: 94° up to 102°, never below 94° into bracket!
+    aKnee = constrain(aKnee, 8.0f, 18.0f);  // Bends smoothly up to ~18°, never hyperextends below 8°!
     aFoot = constrain(aFoot, 93.5f, 95.0f); // Firm 94.0° flat ground plane
     servos[0].currentAngle = aHip;  setServoAngleDirect(0, aHip);
     servos[1].currentAngle = aKnee; setServoAngleDirect(1, aKnee);
@@ -1204,41 +1214,27 @@ void pos(float x, float z, char leg) {
 void takeStep(float sLength, int sVelocity) {
   const int numSteps = 14;
   
-  // Phase 1: Left Swing forward, Right Stance backward
+  // Phase 1: Right Leg Steps Forward in Sinusoidal Arc, Left Leg Solid Stance on Ground
   for (int step = 0; step <= numSteps; step++) {
     if (!gaitRunning && activeGaitName != "ref_step") break;
     float u = (float)step / (float)numSteps; // 0.0 to 1.0
-    float i = sLength * (1.0f - 2.0f * u);   // +sLength to -sLength
-    
-    // Left Leg Swing: moves from -sLength to +sLength, lifts in smooth sinusoidal arc
-    float xl = -i;
-    float zl = stepHeight - (stepClearance * sin(u * (float)M_PI));
-    pos(xl, zl, 'l');
-
-    // Right Leg Stance: moves from +sLength to -sLength, firm on ground
-    float xr = i;
-    float zr = stepHeight;
+    float xr = sLength * sin(u * (float)M_PI);
+    float zr = stepHeight - (stepClearance * sin(u * (float)M_PI));
     pos(xr, zr, 'r');
+    pos(0.0f, stepHeight, 'l');
 
     delay(sVelocity);
     server.handleClient();
   }
 
-  // Phase 2: Right Swing forward, Left Stance backward
+  // Phase 2: Left Leg Steps Forward in Sinusoidal Arc, Right Leg Solid Stance on Ground
   for (int step = 0; step <= numSteps; step++) {
     if (!gaitRunning && activeGaitName != "ref_step") break;
     float u = (float)step / (float)numSteps; // 0.0 to 1.0
-    float i = sLength * (1.0f - 2.0f * u);   // +sLength to -sLength
-    
-    // Right Leg Swing: moves from -sLength to +sLength, lifts in smooth sinusoidal arc
-    float xr = -i;
-    float zr = stepHeight - (stepClearance * sin(u * (float)M_PI));
-    pos(xr, zr, 'r');
-
-    // Left Leg Stance: moves from +sLength to -sLength, firm on ground
-    float xl = i;
-    float zl = stepHeight;
+    float xl = sLength * sin(u * (float)M_PI);
+    float zl = stepHeight - (stepClearance * sin(u * (float)M_PI));
     pos(xl, zl, 'l');
+    pos(0.0f, stepHeight, 'r');
 
     delay(sVelocity);
     server.handleClient();
