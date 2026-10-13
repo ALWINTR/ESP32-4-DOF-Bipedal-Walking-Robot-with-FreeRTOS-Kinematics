@@ -1031,8 +1031,8 @@ void updateHumanLikeWalk() {
 
   float aHipL  = (float)servos[3].homeAngle - (ikL.hipDeg - ikNom.hipDeg);
   float aKneeL = (float)servos[4].homeAngle - dKneeL;
-  // Left Foot: dynamically flexes away from left knee in proportion to knee bend (zero bracket stick)
-  float aFootL = (float)servos[5].homeAngle + (footFlexRatio * dKneeL);
+  // Left Foot: dynamically flexes backward away from left knee in proportion to knee bend (zero bracket stick)
+  float aFootL = (float)servos[5].homeAngle - (footFlexRatio * dKneeL);
 
   // Strict Physical Safety Constraints (Collision-free dynamic ranges)
   aHipR  = constrain(aHipR,  94.0f, 102.0f); // Never swings backward below 94° into chassis bracket
@@ -1041,7 +1041,7 @@ void updateHumanLikeWalk() {
 
   aHipL  = constrain(aHipL,  86.0f,  94.0f); // Never swings backward above 94° into chassis bracket
   aKneeL = constrain(aKneeL, 84.0f,  94.0f); // Bends down to ~84°, returns to 94° neutral
-  aFootL = constrain(aFootL, 93.5f, 100.0f); // Flexes up away from knee, returns to 94° flat ground
+  aFootL = constrain(aFootL, 88.0f,  95.0f); // Flexes down away from knee, returns to 94° flat ground
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1091,8 +1091,8 @@ void executeJointDiagnostics() {
   setServoAngleDirect(8, 87.5f); servos[4].currentAngle = 87.5f; delay(1000);
   setServoAngleDirect(8, 94.0f); servos[4].currentAngle = 94.0f; delay(500);
 
-  // 6. Left Foot (CH 15): 94° -> 96.0° -> 94° (Gentle backward flex away from left knee)
-  setServoAngleDirect(15, 96.0f); servos[5].currentAngle = 96.0f; delay(1000);
+  // 6. Left Foot (CH 15): 94° -> 92.0° -> 94° (Gentle backward flex away from left knee)
+  setServoAngleDirect(15, 92.0f); servos[5].currentAngle = 92.0f; delay(1000);
   setServoAngleDirect(15, 94.0f); servos[5].currentAngle = 94.0f; delay(500);
 
 }
