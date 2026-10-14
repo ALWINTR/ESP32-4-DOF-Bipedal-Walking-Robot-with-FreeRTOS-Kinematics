@@ -4,6 +4,10 @@ build/
 *.hex
 *.elf
 
+# PlatformIO
+.pio/
+
 # System files
 .DS_Store
 Thumbs.db
+

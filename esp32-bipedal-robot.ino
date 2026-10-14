@@ -58,7 +58,7 @@ bool gaitRunning = false;
 // Right Leg: CH 0 (Hip 94°), CH 1 (Knee 8°),  CH 12 (Foot 94°)
 // Left Leg:  CH 4 (Hip 94°), CH 8 (Knee 94°), CH 15 (Foot 94°)
 // ==========================================
-float walkFreq         = 0.80f; // Cadence frequency (Hz)
+float walkFreq         = 0.70f; // Cadence frequency (Hz) - 0.70Hz judder-free cadence
 float stepLength       = 1.6f;  // Cartesian stride length (cm)
 float stepClearance    = 1.00f; // Cartesian foot ground clearance lift (cm) - 1.0cm (user configured)
 float stepHeight       = 10.00f;// Cartesian standing stance height (cm) - 10.0cm (user configured)
@@ -1301,25 +1301,25 @@ void updateHumanLikeWalk() {
   float cosP = cos(phase);
 
   // 1. Cartesian Gait Parameters (cm)
-  // Forward-biased progression with gentle, safe knee clearance (2.5mm lift)
-  float xAmp      = 0.40f * currentGaitScale; // Symmetrical forward half-stride
-  float zLift     = min(0.25f, stepClearance * 0.25f) * currentGaitScale; // Safe 2.5mm lift (5° knee bend max)
+  // Continuous harmonic biped locomotion: both legs actively stride and propel
+  float xCenter   = 0.25f * currentGaitScale; // Forward bias keeps feet safely out of rear pelvis
+  float xAmp      = 0.35f * currentGaitScale; // Symmetrical stride half-amplitude (3.5mm)
+  float zLift     = min(0.30f, stepClearance * 0.30f) * currentGaitScale; // Foot clearance lift (3.0mm)
   float curHeight = stepHeight;               // 10.0cm
 
-  float xr, zr;
-  float xl, zl;
+  // Continuous symmetrical horizontal stride:
+  // Right foot swings forward while Left foot drives table backward (propelling robot forward)
+  float xr = xCenter - (xAmp * cosP);
+  float xl = xCenter + (xAmp * cosP);
 
+  float zr, zl;
   if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings in air forward, Left Leg stance locked at floor neutral
-    xr = xAmp * sinP;
+    // Phase 1: Right Leg swings in air, Left Leg stance on ground
     zr = curHeight - (zLift * sinP * sinP);
-    xl = 0.0f;
     zl = curHeight;
   } else {
-    // Phase 2: Left Leg swings in air forward, Right Leg stance locked at floor neutral
-    xr = 0.0f;
+    // Phase 2: Left Leg swings in air, Right Leg stance on ground
     zr = curHeight;
-    xl = xAmp * (-sinP);
     zl = curHeight - (zLift * sinP * sinP);
   }
 
@@ -1356,45 +1356,38 @@ void updateHumanLikeWalk() {
   IKResult ikL   = solveIK(xl, zl);
   IKResult ikNom = solveIK(0.0f, curHeight);
 
-  // Deltas relative to calibrated standing posture
-  float dHr = max(0.0f, ikR.hipDeg - ikNom.hipDeg);
-  float dKr = max(0.0f, ikR.kneeDeg - ikNom.kneeDeg);
+  // Joint angle deltas relative to standing posture
+  float dHr = ikR.hipDeg - ikNom.hipDeg;
+  float dKr = ikR.kneeDeg - ikNom.kneeDeg;
 
-  float dHl = max(0.0f, ikL.hipDeg - ikNom.hipDeg);
-  float dKl = max(0.0f, ikL.kneeDeg - ikNom.kneeDeg);
+  float dHl = ikL.hipDeg - ikNom.hipDeg;
+  float dKl = ikL.kneeDeg - ikNom.kneeDeg;
 
-  // 3. Dynamic Foot Articulation (gentle 2.0° flex away from knee during swing)
-  float footFlexMaxDeg = 2.0f * currentGaitScale;
-  float aFootR, aFootL;
+  // 3. Dynamic Foot Leveling (maintains sole parallel to floor during swing)
+  float footAdjR = 0.30f * dHr;
+  float footAdjL = 0.30f * dHl;
 
-  if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings in air, Left Leg stance flat on ground
-    aFootR = (float)servos[2].homeAngle - (footFlexMaxDeg * sinP);
-    aFootL = (float)servos[5].homeAngle; // Locked flat 94.0° stance
-  } else {
-    // Phase 2: Left Leg swings in air, Right Leg stance flat on ground
-    aFootR = (float)servos[2].homeAngle; // Locked flat 94.0° stance
-    aFootL = (float)servos[5].homeAngle - (footFlexMaxDeg * (-sinP));
-  }
-
+  // 4. Map to Physical Servos
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
   float aHipR  = (float)servos[0].homeAngle + dHr;
   float aKneeR = (float)servos[1].homeAngle + dKr;
+  float aFootR = (float)servos[2].homeAngle - footAdjR;
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
   float aHipL  = (float)servos[3].homeAngle - dHl;
   float aKneeL = (float)servos[4].homeAngle - dKl;
+  float aFootL = (float)servos[5].homeAngle - footAdjL;
 
   // Strict Physical Safety Constraints (Guaranteed Non-Jamming, Rear Chassis Lockout & Anti-Knee Collision)
-  // Right Leg: Hip 94° to 100.0°; Knee 8.0° to 14.0°; Foot 91.5° to 94.0°
-  aHipR  = constrain(aHipR,  94.0f, 100.0f);
-  aKneeR = constrain(aKneeR,   8.0f,  14.0f);
-  aFootR = constrain(aFootR,  91.5f,  94.0f);
+  // Right Leg: Hip 92.5° to 101.5°; Knee 7.5° to 17.5°; Foot 91.5° to 94.5°
+  aHipR  = constrain(aHipR,  92.5f, 101.5f);
+  aKneeR = constrain(aKneeR,   7.5f,  17.5f);
+  aFootR = constrain(aFootR,  91.5f,  94.5f);
 
-  // Left Leg: Hip 88.0° to 94.0° (Zero rear swing into pelvis!); Knee 88.0° to 94.5° (Zero knee-foot contact!); Foot 91.5° to 94.0°
-  aHipL  = constrain(aHipL,  88.0f,  94.0f);
-  aKneeL = constrain(aKneeL,  88.0f,  94.5f);
-  aFootL = constrain(aFootL,  91.5f,  94.0f);
+  // Left Leg: Hip 86.5° to 95.5°; Knee 84.5° to 94.5°; Foot 91.5° to 94.5°
+  aHipL  = constrain(aHipL,  86.5f,  95.5f);
+  aKneeL = constrain(aKneeL,  84.5f,  94.5f);
+  aFootL = constrain(aFootL,  91.5f,  94.5f);
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1481,12 +1474,12 @@ struct ServoProxy {
   void attach(int pin) {}
 };
 
-ServoProxy hipL   = {4,  3, 88.0f,  94.0f}; // 88° forward max, 94° rear stop (zero pelvis contact)
-ServoProxy hipR   = {0,  0, 94.0f, 100.0f}; // 94° rear stop, 100° forward max (zero pelvis contact)
-ServoProxy kneeL  = {8,  4, 88.0f,  94.5f}; // 88° max bend (100% clearance from foot), 94.5° extension
-ServoProxy kneeR  = {1,  1,  8.0f,  14.0f}; // 8.0° extension, 14.0° max bend (100% clearance from foot)
-ServoProxy ankleL = {15, 5, 91.5f,  94.5f}; // 91.5° to 94.0° safe foot articulation (zero knee contact)
-ServoProxy ankleR = {12, 2, 91.5f,  94.5f}; // 91.5° to 94.0° safe foot articulation (zero knee contact)
+ServoProxy hipL   = {4,  3, 86.5f,  95.5f}; // 86.5° forward max, 95.5° rear stop (zero pelvis contact)
+ServoProxy hipR   = {0,  0, 92.5f, 101.5f}; // 92.5° rear stop, 101.5° forward max (zero pelvis contact)
+ServoProxy kneeL  = {8,  4, 84.5f,  94.5f}; // 84.5° max bend (clean clearance from foot), 94.5° extension
+ServoProxy kneeR  = {1,  1,  7.5f,  17.5f}; // 7.5° extension, 17.5° max bend (clean clearance from foot)
+ServoProxy ankleL = {15, 5, 91.5f,  94.5f}; // 91.5° to 94.5° safe foot articulation (zero knee contact)
+ServoProxy ankleR = {12, 2, 91.5f,  94.5f}; // 91.5° to 94.5° safe foot articulation (zero knee contact)
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg){
   float footAdjustment = constrain(0.20f * dKnee, 0.0f, 2.0f); // Gentle 1-2° ankle flexion
@@ -1659,6 +1652,7 @@ void handleRunGait() {
     gaitRunning = true;
     activeGaitName = "walk";
     walkStartTime = millis();
+    currentGaitScale = 0.0f; // Smooth ease-in from standing posture!
   } else if (gait == "step") {
     gaitRunning = false;
     activeGaitName = "step";
