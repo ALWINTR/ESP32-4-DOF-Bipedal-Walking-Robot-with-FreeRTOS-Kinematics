@@ -54,11 +54,11 @@ struct JointConfig {
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
   {0,  "Right Hip",   94.0f, 88.0f, 108.0f}, // CH 0: 94° rear stop, forward swing up to 108°
-  {1,  "Right Knee",   8.0f,  7.5f,  20.0f}, // CH 1: 8° straight extension, gentle lift up to 20°
-  {12, "Right Foot",  94.0f, 90.5f,  95.0f}, // CH 12: 94° flat ground, levels to 91.5° during swing
+  {1,  "Right Knee",   8.0f,  8.0f,  14.5f}, // CH 1: 8° straight extension, safe lift to 14.5° (ZERO knee-foot contact!)
+  {12, "Right Foot",  94.0f, 93.5f,  94.5f}, // CH 12: strictly flat 94° neutral (ZERO backward collision with knee!)
   {4,  "Left Hip",    94.0f, 80.0f, 100.0f}, // CH 4: 94° rear stop, forward swing down to 80°
-  {8,  "Left Knee",   94.0f, 83.5f,  95.0f}, // CH 8: 94° straight extension, gentle lift down to 84°
-  {15, "Left Foot",   94.0f, 90.5f,  95.0f}  // CH 15: 94° flat ground, flexes away from knee
+  {8,  "Left Knee",   94.0f, 87.5f,  94.5f}, // CH 8: 94° straight extension, safe lift to 87.5° (ZERO knee-foot contact!)
+  {15, "Left Foot",   94.0f, 93.5f,  94.5f}  // CH 15: strictly flat 94° neutral (ZERO collision with knee!)
 };
 
 // =============================================================================

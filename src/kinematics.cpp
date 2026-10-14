@@ -77,36 +77,31 @@ void updateLocomotion(float dt) {
   float strideL =  cosP * hipSwingAmp + hipForwardBias;
 
   // 2. Smooth Parabolic Knee Lift (zero-velocity soft touchdown)
-  float maxKneeLift = 8.5f * (stepClearance / 1.0f) * currentGaitScale;
+  // Capped at 5.0° lift so knee bracket stays safely clear of foot bracket
+  float maxKneeLift = 5.0f * (stepClearance / 1.0f) * currentGaitScale;
   float kneeLiftR = 0.0f;
   float kneeLiftL = 0.0f;
-  float footAdjR  = 0.0f;
-  float footAdjL  = 0.0f;
 
   if (sinP >= 0.0f) {
     // Phase 1: Right Leg swings in air, Left Leg stance on ground
     kneeLiftR = (sinP * sinP) * maxKneeLift;
     kneeLiftL = 0.0f;
-    footAdjR  = sinP * (2.2f * currentGaitScale);
-    footAdjL  = 0.0f;
   } else {
     // Phase 2: Left Leg swings in air, Right Leg stance on ground
     kneeLiftR = 0.0f;
     kneeLiftL = (sinP * sinP) * maxKneeLift;
-    footAdjR  = 0.0f;
-    footAdjL  = (-sinP) * (2.2f * currentGaitScale);
   }
 
   // 3. Map to Servos relative to calibrated home angles
   // Right Leg: CH 0 Hip (94°), CH 1 Knee (8°), CH 12 Foot (94°)
   float aHipR  = getJoint(0)->homeAngle + strideR;
   float aKneeR = getJoint(1)->homeAngle + kneeLiftR;
-  float aFootR = getJoint(2)->homeAngle - footAdjR;
+  float aFootR = getJoint(2)->homeAngle; // Strictly flat 94.0° - ZERO backward hitting into right knee!
 
   // Left Leg: CH 4 Hip (94°), CH 8 Knee (94°), CH 15 Foot (94°)
   float aHipL  = getJoint(3)->homeAngle - strideL;
   float aKneeL = getJoint(4)->homeAngle - kneeLiftL;
-  float aFootL = getJoint(5)->homeAngle - footAdjL;
+  float aFootL = getJoint(5)->homeAngle; // Strictly flat 94.0° - ZERO collision with left knee!
 
   // Send to PCA9685 driver (physical safety clamping handled inside setServoAngle)
   setServoAngle(0,  aHipR);
@@ -166,16 +161,16 @@ void runJointDiagnostics() {
   setServoAngle(0, 102.0f); delay(800);
   setServoAngle(0, 94.0f);  delay(400);
 
-  // Right Knee (CH 1): 8° -> 16° -> 8°
-  setServoAngle(1, 16.0f); delay(800);
+  // Right Knee (CH 1): 8° -> 14.0° -> 8° (safe sweep clear of foot)
+  setServoAngle(1, 14.0f); delay(800);
   setServoAngle(1, 8.0f);  delay(400);
 
   // Left Hip (CH 4): 94° -> 86° -> 94°
   setServoAngle(4, 86.0f); delay(800);
   setServoAngle(4, 94.0f); delay(400);
 
-  // Left Knee (CH 8): 94° -> 86° -> 94°
-  setServoAngle(8, 86.0f); delay(800);
+  // Left Knee (CH 8): 94° -> 88.0° -> 94° (safe sweep clear of foot)
+  setServoAngle(8, 88.0f); delay(800);
   setServoAngle(8, 94.0f); delay(400);
 
   parkNeutralStand();
