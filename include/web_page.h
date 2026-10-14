@@ -519,12 +519,20 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <div class="action-title"><span>📐 3. Ref takeStep(2,0)</span><span>▶</span></div>
             <div class="action-desc">Discrete calibrated IK step sequence</div>
           </div>
+          <div class="action-card act-march" onclick="runGait('march')" style="border-color: rgba(6,182,212,0.35); background: rgba(6,182,212,0.1);">
+            <div class="action-title" style="color: #67e8f9;"><span>🎪 4. In-Place March</span><span>▶</span></div>
+            <div class="action-desc">High-knee dynamic alternating foot lift with zero forward translation</div>
+          </div>
+          <div class="action-card act-crouch" onclick="runGait('crouch')" style="border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.1);">
+            <div class="action-title" style="color: #fde68a;"><span>🏋️ 5. Crouch & Squat</span><span>▶</span></div>
+            <div class="action-desc">Symmetrical vertical squat showing coordinated knee & ankle flexion</div>
+          </div>
           <div class="action-card act-test" onclick="runGait('test')">
-            <div class="action-title"><span>🧪 4. Diagnostics Sweep</span><span>▶</span></div>
+            <div class="action-title"><span>🧪 6. Diagnostics Sweep</span><span>▶</span></div>
             <div class="action-desc">Sequential gentle safety sweep of all 6 servos</div>
           </div>
-          <div class="action-card act-stop" onclick="runGait('stand')" style="background: linear-gradient(135deg, rgba(239,68,68,0.25), rgba(185,28,28,0.2)); border: 1px solid rgba(239,68,68,0.4);">
-            <div class="action-title" style="color: #fca5a5;"><span>🛑 5. EMERGENCY STOP & PARK STAND</span><span>⏹</span></div>
+          <div class="action-card act-stop" onclick="runGait('stand')" style="background: linear-gradient(135deg, rgba(239,68,68,0.25), rgba(185,28,28,0.2)); border: 1px solid rgba(239,68,68,0.4); grid-column: span 2;">
+            <div class="action-title" style="color: #fca5a5;"><span>🛑 7. EMERGENCY STOP & PARK STAND</span><span>⏹</span></div>
             <div class="action-desc">Locks both legs to calibrated standing neutral [94°, 8°, 94° | 94°, 94°, 94°]</div>
           </div>
         </div>

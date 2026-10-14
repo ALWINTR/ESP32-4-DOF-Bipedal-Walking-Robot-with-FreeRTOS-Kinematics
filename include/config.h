@@ -53,12 +53,12 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 86.0f, 104.0f}, // CH 0: 94° neutral, active stride 88°-100°
-  {1,  "Right Knee",   8.0f,  8.0f,  14.5f}, // CH 1: 8° straight extension, active lift to 13.0° in air
-  {12, "Right Foot",  94.0f, 93.5f,  98.0f}, // CH 12: 94° flat ground, active flex to 97.0° in air away from knee
-  {4,  "Left Hip",    94.0f, 84.0f, 102.0f}, // CH 4: 94° neutral, active stride 88°-100°
-  {8,  "Left Knee",   94.0f, 87.5f,  94.5f}, // CH 8: 94° straight extension, active lift to 89.0° in air
-  {15, "Left Foot",   94.0f, 90.0f,  94.5f}  // CH 15: 94° flat ground, active flex to 91.0° in air away from knee
+  {0,  "Right Hip",   94.0f, 80.0f, 110.0f}, // CH 0: 94° neutral, full kinematic stride 82°-108°
+  {1,  "Right Knee",   8.0f,  8.0f,  16.0f}, // CH 1: 8° straight extension, active lift to 15.0° in air
+  {12, "Right Foot",  94.0f, 84.0f, 108.0f}, // CH 12: 94° flat ground, stance tracks hip, swing >= 94° (zero knee contact!)
+  {4,  "Left Hip",    94.0f, 78.0f, 108.0f}, // CH 4: 94° neutral, full kinematic stride 80°-108°
+  {8,  "Left Knee",   94.0f, 72.0f,  98.0f}, // CH 8: 94° straight extension, active lift to 76.0° in air
+  {15, "Left Foot",   94.0f, 80.0f, 110.0f}  // CH 15: 94° flat ground, active stance and swing
 };
 
 // =============================================================================
@@ -68,9 +68,9 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 #define LINK_THIGH_L1_CM           5.00f  // Thigh length l1
 #define LINK_SHIN_L2_CM            5.70f  // Shin length l2
 
-#define DEFAULT_WALK_FREQ_HZ       0.65f  // Calm, judder-free cadence frequency
-#define DEFAULT_STEP_LENGTH_CM     1.60f  // Cartesian stride scaling
-#define DEFAULT_STEP_CLEARANCE_CM  1.00f  // Cartesian foot ground clearance
+#define DEFAULT_WALK_FREQ_HZ       0.60f  // Calm, judder-free cadence frequency
+#define DEFAULT_STEP_LENGTH_CM     1.50f  // Cartesian stride scaling
+#define DEFAULT_STEP_CLEARANCE_CM  0.85f  // Cartesian foot ground clearance
 #define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
 
 #define ROBOT_TOTAL_WEIGHT_GRAMS   500.0f // Nominal robot mass

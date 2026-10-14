@@ -96,20 +96,24 @@ IKResult solveIK(float x, float z) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
-  float safeLift = constrain(dKnee * 0.30f, 0.0f, 4.5f);
-  float safeFlex = constrain(fabs(dAnkle) * 0.20f, 0.0f, 2.5f);
-
   if (leg == 'l') {
-    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 88.0f, 100.0f);
-    float aKnee = getJoint(4)->homeAngle - safeLift;
-    float aFoot = getJoint(5)->homeAngle - safeFlex;
+    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 78.0f, 108.0f);
+    float aKnee = constrain(getJoint(4)->homeAngle - constrain(dKnee, 0.0f, 18.0f), 72.0f, 98.0f);
+    float aFoot = constrain(getJoint(5)->homeAngle - dAnkle, 80.0f, 110.0f);
     setServoAngle(4,  aHip);
     setServoAngle(8,  aKnee);
     setServoAngle(15, aFoot);
   } else if (leg == 'r') {
-    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 88.0f, 100.0f);
-    float aKnee = getJoint(1)->homeAngle + safeLift;
-    float aFoot = getJoint(2)->homeAngle + safeFlex;
+    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 80.0f, 110.0f);
+    float aKnee = constrain(getJoint(1)->homeAngle + constrain(dKnee, 0.0f, 6.5f), 8.0f, 16.0f);
+    float aFoot;
+    if (dKnee > 1.0f) {
+      // Swing phase: flex forward so heel stays pointing down and forward away from knee
+      aFoot = constrain(getJoint(2)->homeAngle + max(0.0f, dAnkle + 3.0f), 94.0f, 104.0f);
+    } else {
+      // Stance phase: track hip angle to remain flat on the ground
+      aFoot = constrain(getJoint(2)->homeAngle + dAnkle, 84.0f, 106.0f);
+    }
     setServoAngle(0,  aHip);
     setServoAngle(1,  aKnee);
     setServoAngle(12, aFoot);
@@ -128,25 +132,25 @@ void pos(float x, float z, char leg) {
 }
 
 void takeStep(float sLength, int stepVelocity) {
-  int delayMs = (stepVelocity > 0) ? stepVelocity : 25;
-  float sClear = min(0.6f, stepClearance);
+  int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
+  float sClear = min(0.80f, stepClearance);
 
-  // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L)
-  for (float i = sLength; i >= -sLength; i -= 0.15f) {
+  // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L, lifted)
+  for (float i = sLength; i >= -sLength; i -= 0.12f) {
     pos(i, stepHeight, 'r');
     pos(-i, stepHeight - sClear, 'l');
     delay(delayMs);
   }
 
-  // Phase 2: Right Leg swing (x: -L -> +L), Left Leg stance (x: +L -> -L)
-  for (float i = sLength; i >= -sLength; i -= 0.15f) {
+  // Phase 2: Right Leg swing (x: -L -> +L, lifted), Left Leg stance (x: +L -> -L)
+  for (float i = sLength; i >= -sLength; i -= 0.12f) {
     pos(-i, stepHeight - sClear, 'r');
     pos(i, stepHeight, 'l');
     delay(delayMs);
   }
 
   // Smooth settle back to neutral stand (x: 0, z: stepHeight)
-  for (float i = sLength; i >= 0.0f; i -= 0.15f) {
+  for (float i = sLength; i >= 0.0f; i -= 0.12f) {
     pos(i, stepHeight, 'r');
     pos(-i, stepHeight, 'l');
     delay(delayMs);
@@ -186,72 +190,122 @@ void updateLocomotion(float dt) {
   float cosP = cos(phase);
   float sinP = sin(phase);
 
-  // Cartesian Trajectory matching reference takeStep:
-  // Phase 1 (0 to PI): Right Leg stance (+L -> -L), Left Leg swing (-L -> +L, lifted)
-  // Phase 2 (PI to 2PI): Right Leg swing (-L -> +L, lifted), Left Leg stance (+L -> -L)
   float sLength = stepLength * currentGaitScale;
-  float sClear  = min(0.6f, stepClearance) * currentGaitScale;
+  float sClear  = min(0.85f, stepClearance) * currentGaitScale;
   float sHeight = stepHeight;
 
-  float xr =  cosP * sLength;
-  float xl = -cosP * sLength;
+  float xr = 0.0f;
+  float xl = 0.0f;
   float zr = sHeight;
   float zl = sHeight;
 
-  // Active Knee Lift & Foot Leveling Flexion
-  float kneeLiftR = 0.0f;
-  float footFlexR = 0.0f;
-  float kneeLiftL = 0.0f;
-  float footFlexL = 0.0f;
-
-  if (sinP >= 0.0f) {
-    // Phase 1: Right Leg stance on ground, Left Leg swing in air
-    zr = sHeight;
-    zl = sHeight - sinP * sClear;
-
-    kneeLiftR = 0.0f;
-    footFlexR = 0.0f;
-
-    // Left Knee lifts up 4.5°, Left Foot flexes 2.5° away from knee
-    kneeLiftL = sinP * (4.5f * currentGaitScale);
-    footFlexL = sinP * (2.5f * currentGaitScale);
+  if (activeGaitName == "backward" || activeGaitName == "back") {
+    // Reverse Stride Walk
+    xr = -cosP * sLength;
+    xl =  cosP * sLength;
+    if (sinP >= 0.0f) {
+      zr = sHeight;
+      zl = sHeight - sinP * sClear;
+    } else {
+      zr = sHeight - (-sinP) * sClear;
+      zl = sHeight;
+    }
+  } else if (activeGaitName == "march") {
+    // In-Place Dynamic Stepping (high knee lifts, zero forward drift)
+    xr = 0.0f;
+    xl = 0.0f;
+    if (sinP >= 0.0f) {
+      zr = sHeight;
+      zl = sHeight - sinP * sClear * 1.2f;
+    } else {
+      zr = sHeight - (-sinP) * sClear * 1.2f;
+      zl = sHeight;
+    }
+  } else if (activeGaitName == "turn_left" || activeGaitName == "left") {
+    // Differential Turn Left
+    xr =  cosP * sLength;
+    xl =  cosP * (sLength * 0.4f);
+    if (sinP >= 0.0f) {
+      zr = sHeight;
+      zl = sHeight - sinP * sClear;
+    } else {
+      zr = sHeight - (-sinP) * sClear;
+      zl = sHeight;
+    }
+  } else if (activeGaitName == "turn_right" || activeGaitName == "right") {
+    // Differential Turn Right
+    xr = -cosP * (sLength * 0.4f);
+    xl = -cosP * sLength;
+    if (sinP >= 0.0f) {
+      zr = sHeight;
+      zl = sHeight - sinP * sClear;
+    } else {
+      zr = sHeight - (-sinP) * sClear;
+      zl = sHeight;
+    }
+  } else if (activeGaitName == "crouch" || activeGaitName == "squat") {
+    // Symmetrical Squat / Crouch & Rise
+    xr = 0.0f;
+    xl = 0.0f;
+    float squat = (0.5f - 0.5f * cosP) * 1.2f * currentGaitScale;
+    zr = sHeight - squat;
+    zl = sHeight - squat;
   } else {
-    // Phase 2: Right Leg swing in air, Left Leg stance on ground
-    zr = sHeight - (-sinP) * sClear;
-    zl = sHeight;
-
-    // Right Knee lifts up 4.5°, Right Foot flexes 2.5° away from knee
-    kneeLiftR = (-sinP) * (4.5f * currentGaitScale);
-    footFlexR = (-sinP) * (2.5f * currentGaitScale);
-
-    kneeLiftL = 0.0f;
-    footFlexL = 0.0f;
+    // Default Dynamic Forward Walk ("walk", "forward", etc.)
+    xr =  cosP * sLength;
+    xl = -cosP * sLength;
+    if (sinP >= 0.0f) {
+      zr = sHeight;
+      zl = sHeight - sinP * sClear;
+    } else {
+      zr = sHeight - (-sinP) * sClear;
+      zl = sHeight;
+    }
   }
 
-  // Solve Reference Inverse Kinematics for both hips
+  // Solve Reference Inverse Kinematics for both legs
   IKResult ikR = solveIK(xr, zr);
   IKResult ikL = solveIK(xl, zl);
   IKResult nom = solveIK(0.0f, sHeight);
 
-  float dHipR = ikR.hipDeg - nom.hipDeg;
-  float dHipL = ikL.hipDeg - nom.hipDeg;
+  float dHipR   = ikR.hipDeg - nom.hipDeg;
+  float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
+  float dAnkleR = ikR.ankleDeg - nom.ankleDeg;
 
-  // Target Joint Setpoints (ALL 6 JOINTS ACTIVELY DRIVEN):
+  float dHipL   = ikL.hipDeg - nom.hipDeg;
+  float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
+  float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
+
+  // Target Joint Setpoints (ALL 6 JOINTS KINEMATICALLY COUPLED):
+  // -------------------------------------------------------------
   // Right Leg:
-  //   CH 0  Hip:  Strides 88° to 100° (home: 94°)
-  //   CH 1  Knee: Stance 8°, lifts to 12.5° in air (home: 8°)
-  //   CH 12 Foot: Flat 94°, flexes to 96.5° in air away from knee (home: 94°)
-  float targetHipR  = constrain(getJoint(0)->homeAngle + dHipR, 88.0f, 100.0f);
+  // CH 0 Hip:   Follows dHipR directly (80° to 110°)
+  // CH 1 Knee:  Holds 8° in stance; lifts up in air (capped at 6.5° lift -> 14.5° max)
+  // CH 12 Foot: Follows dAnkleR in stance to remain flat; flexes forward in swing (>= 94.0°)
+  float targetHipR  = constrain(getJoint(0)->homeAngle + dHipR, 80.0f, 110.0f);
+  float kneeLiftR   = constrain(dKneeR, 0.0f, 6.5f);
   float targetKneeR = getJoint(1)->homeAngle + kneeLiftR;
-  float targetFootR = getJoint(2)->homeAngle + footFlexR;
+  
+  float targetFootR;
+  if (sinP >= 0.0f && activeGaitName != "crouch" && activeGaitName != "squat") {
+    // Right Leg is in Stance: foot follows hip angle to stay flat on ground
+    targetFootR = constrain(getJoint(2)->homeAngle + dAnkleR, 84.0f, 106.0f);
+  } else if (activeGaitName == "crouch" || activeGaitName == "squat") {
+    targetFootR = constrain(getJoint(2)->homeAngle + dAnkleR, 84.0f, 106.0f);
+  } else {
+    // Right Leg is in Swing: foot flexes forward, heel down/forward, ZERO contact with knee
+    float flexForward = max(0.0f, dAnkleR + 4.0f * (-sinP));
+    targetFootR = constrain(getJoint(2)->homeAngle + flexForward, 94.0f, 104.0f);
+  }
 
   // Left Leg:
-  //   CH 4  Hip:  Strides 100° to 88° (home: 94°)
-  //   CH 8  Knee: Stance 94°, lifts to 89.5° in air (home: 94°)
-  //   CH 15 Foot: Flat 94°, flexes to 91.5° in air away from knee (home: 94°)
-  float targetHipL  = constrain(getJoint(3)->homeAngle - dHipL, 88.0f, 100.0f);
+  // CH 4 Hip:   Follows dHipL directly (78° to 108°)
+  // CH 8 Knee:  Holds 94° in stance; lifts up in swing (down to 76°)
+  // CH 15 Foot: Follows -dAnkleL to remain flat in stance and clear ground in swing
+  float targetHipL  = constrain(getJoint(3)->homeAngle - dHipL, 78.0f, 108.0f);
+  float kneeLiftL   = constrain(dKneeL, 0.0f, 18.0f);
   float targetKneeL = getJoint(4)->homeAngle - kneeLiftL;
-  float targetFootL = getJoint(5)->homeAngle - footFlexL;
+  float targetFootL = constrain(getJoint(5)->homeAngle - dAnkleL, 80.0f, 110.0f);
 
   // Low-Pass Exponential Smoothing Filter across all 6 joints
   const float alpha = 0.35f;
