@@ -58,9 +58,9 @@ bool gaitRunning = false;
 // Right Leg: CH 0 (Hip 94°), CH 1 (Knee 8°),  CH 12 (Foot 94°)
 // Left Leg:  CH 4 (Hip 94°), CH 8 (Knee 94°), CH 15 (Foot 94°)
 // ==========================================
-float walkFreq         = 0.65f; // Cadence frequency (Hz)
-float stepLength       = 1.2f;  // Cartesian stride length (cm)
-float stepClearance    = 0.35f; // Cartesian foot ground clearance lift (cm)
+float walkFreq         = 0.80f; // Cadence frequency (Hz)
+float stepLength       = 2.0f;  // Cartesian stride length (cm) - 1.0cm reach forward & backward
+float stepClearance    = 0.80f; // Cartesian foot ground clearance lift (cm) - 8.0mm lift clears table
 float stepHeight       = 10.55f;// Cartesian standing stance height (cm)
 float currentGaitScale = 0.0f;  // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
@@ -1312,24 +1312,24 @@ void updateHumanLikeWalk() {
     // -------------------------------------------------------------
     // PHASE 1 (0 to PI): RIGHT LEG SWING (AIR), LEFT LEG STANCE (GROUND)
     // -------------------------------------------------------------
-    // Right foot lifts and swings forward in an arc from -curStepLen to +curStepLen
+    // Right foot lifts and swings forward with smooth cycloidal bell-curve (zero slap/bounce)
     xr = -curStepLen * cosP;
-    zr = curHeight - (curClear * sinP);
+    zr = curHeight - (curClear * sinP * sinP);
 
-    // Left foot stance on ground: drives pelvis forward from +curStepLen to -curStepLen
-    xl = curStepLen * cosP;
+    // Left foot stance on ground: actively drives table backward, propelling robot forward
+    xl = (curStepLen * cosP) + (0.30f * sinP * currentGaitScale);
     zl = curHeight;
   } else {
     // -------------------------------------------------------------
     // PHASE 2 (PI to 2*PI): LEFT LEG SWING (AIR), RIGHT LEG STANCE (GROUND)
     // -------------------------------------------------------------
-    // Right foot stance on ground: drives pelvis forward
-    xr = -curStepLen * cosP;
+    // Right foot stance on ground: actively drives table backward, propelling robot forward
+    xr = (-curStepLen * cosP) - (0.30f * (-sinP) * currentGaitScale);
     zr = curHeight;
 
-    // Left foot lifts and swings forward in an arc from -curStepLen to +curStepLen
+    // Left foot lifts and swings forward with smooth cycloidal bell-curve (zero slap/bounce)
     xl = curStepLen * cosP;
-    zl = curHeight - (curClear * (-sinP));
+    zl = curHeight - (curClear * (sinP * sinP));
   }
 
   // Real-Time Dynamic Ground Reaction Force & Weight Calculation
@@ -1374,25 +1374,28 @@ void updateHumanLikeWalk() {
   float dKl = ikL.kneeDeg - ikNom.kneeDeg;
   float dAl = ikL.ankleDeg - ikNom.ankleDeg;
 
+  // Dynamic Forward Torso Lean (gravity assists forward travel, 0.0° when standing)
+  float forwardLean = 3.5f * currentGaitScale;
+
   // 3. Map IK Angles to Physical Servo Positions (Genuine Human Locomotion)
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
   // Dynamic foot coordination: reduces gap according with hip and knee movement to eliminate collision
-  float aHipR  = (float)servos[0].homeAngle + dHr;
+  float aHipR  = (float)servos[0].homeAngle + dHr + forwardLean;
   float aKneeR = (float)servos[1].homeAngle + dKr;
   float aFootR = (float)servos[2].homeAngle - (0.22f * dHr + 0.25f * dKr);
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
   // Left foot dynamically coordinates with left hip and left knee (gap strictly maintained, zero collision!)
-  float aHipL  = (float)servos[3].homeAngle - dHl;
+  float aHipL  = (float)servos[3].homeAngle - dHl - forwardLean;
   float aKneeL = (float)servos[4].homeAngle - dKl;
   float aFootL = (float)servos[5].homeAngle - (0.22f * dHl + 0.25f * dKl);
 
   // Strict Physical Safety Constraints (Collision-free dynamic ranges, zero bracket binding)
-  aHipR  = constrain(aHipR,  82.0f, 108.0f);
+  aHipR  = constrain(aHipR,  82.0f, 112.0f);
   aKneeR = constrain(aKneeR,  7.5f,  26.0f);
   aFootR = constrain(aFootR, 88.0f,  94.0f); // Never exceeds 94.0° -> Zero foot-knee collision!
 
-  aHipL  = constrain(aHipL,  82.0f, 108.0f);
+  aHipL  = constrain(aHipL,  80.0f, 110.0f);
   aKneeL = constrain(aKneeL, 76.0f,  94.5f); // Never hyperextends past 94.5°, min 76° bracket stop
   aFootL = constrain(aFootL, 88.0f,  94.0f); // Never exceeds 94.0° -> Zero foot-knee collision!
 
@@ -1543,19 +1546,22 @@ void pos(float x, float z, char leg){
   updateServoPos(dHip, dKnee, dAnkle, leg);  
 }
 
-void takeStep(float stepLength, int stepVelocity){
+void takeStep(float sLength, int stepVelocity){
   int delayMs = (stepVelocity > 0) ? stepVelocity : 25; // Judder-free timing: smooth servo trajectory
-  for (float i = stepLength; i >= -stepLength; i -= 0.2f){
+  float sLift = stepClearance;
+  // Phase 1: Right stance on ground, Left swing through air
+  for (float i = sLength; i >= -sLength; i -= 0.15f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
     pos(i, stepHeight, 'r');
-    pos(-i, stepHeight - stepClearance, 'l');
+    pos(-i, stepHeight - sLift, 'l');
     delay(delayMs);
     server.handleClient();
   }
 
-  for (float i = stepLength; i >= -stepLength; i -= 0.2f){
+  // Phase 2: Right swing through air, Left stance on ground
+  for (float i = sLength; i >= -sLength; i -= 0.15f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
-    pos(-i, stepHeight - stepClearance, 'r');
+    pos(-i, stepHeight - sLift, 'r');
     pos(i, stepHeight, 'l');
     delay(delayMs);
     server.handleClient();
