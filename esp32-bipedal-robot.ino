@@ -1301,37 +1301,13 @@ void updateHumanLikeWalk() {
   float cosP = cos(phase);
 
   // Scaled Cartesian Step Parameters (in cm)
-  float forwardBias = 0.35f * currentGaitScale; // Dynamic forward bias: keeps stride in open front space & prevents rear hip jamming
-  float curStepLen  = (stepLength * 0.5f) * currentGaitScale; // Half-stride amplitude (cm)
-  float curClear    = stepClearance * currentGaitScale;        // Foot clearance lift (cm)
-  float curHeight   = stepHeight;                              // Stance floor level (cm)
+  float curStepLen = (stepLength * 0.45f) * currentGaitScale; // Symmetrical half-stride amplitude (cm)
+  float curClear   = stepClearance * currentGaitScale;        // Foot clearance lift (cm)
+  float curHeight  = stepHeight;                              // Stance floor level (cm)
 
-  float xr, zr;
-  float xl, zl;
-
-  if (sinP >= 0.0f) {
-    // -------------------------------------------------------------
-    // PHASE 1 (0 to PI): RIGHT LEG SWING (AIR), LEFT LEG STANCE (GROUND)
-    // -------------------------------------------------------------
-    // Right foot lifts and swings forward into open front clearance
-    xr = (-curStepLen * cosP) + forwardBias;
-    zr = curHeight - (curClear * sinP * sinP);
-
-    // Left foot stance on ground: stable weight-bearing stance with forward bias
-    xl = (curStepLen * cosP) + forwardBias;
-    zl = curHeight;
-  } else {
-    // -------------------------------------------------------------
-    // PHASE 2 (PI to 2*PI): LEFT LEG SWING (AIR), RIGHT LEG STANCE (GROUND)
-    // -------------------------------------------------------------
-    // Right foot stance on ground: stable weight-bearing stance with forward bias
-    xr = (-curStepLen * cosP) + forwardBias;
-    zr = curHeight;
-
-    // Left foot lifts and swings forward into open front clearance
-    xl = (curStepLen * cosP) + forwardBias;
-    zl = curHeight - (curClear * (sinP * sinP));
-  }
+  // Pure symmetrical forward-backward horizontal stride
+  float xr = -curStepLen * cosP;
+  float xl =  curStepLen * cosP;
 
   // Real-Time Dynamic Ground Reaction Force & Weight Calculation
   if (currentGaitScale > 0.08f) {
@@ -1361,44 +1337,47 @@ void updateHumanLikeWalk() {
   }
   groundForceNewtons = (weightLeftGrams + weightRightGrams) * 0.00981f;
 
-  // 2. Solve Inverse Kinematics for Both Legs in Real Time
-  IKResult ikR   = solveIK(xr, zr);
-  IKResult ikL   = solveIK(xl, zl);
-  IKResult ikNom = solveIK(0.0f, curHeight);
+  // 2. Decoupled Dynamic Locomotion Kinematics
+  // Hip swing is driven purely by horizontal step displacement (eliminates runaway upward hip jackknife)
+  float dHr = atan2(xr, curHeight) * (180.0f / (float)M_PI);
+  float dHl = atan2(xl, curHeight) * (180.0f / (float)M_PI);
 
-  // Joint angle deltas from nominal standing pose
-  float dHr = ikR.hipDeg - ikNom.hipDeg;
-  float dKr = ikR.kneeDeg - ikNom.kneeDeg;
-  float dAr = ikR.ankleDeg - ikNom.ankleDeg;
-
-  float dHl = ikL.hipDeg - ikNom.hipDeg;
-  float dKl = ikL.kneeDeg - ikNom.kneeDeg;
-  float dAl = ikL.ankleDeg - ikNom.ankleDeg;
-
-  // Dynamic Forward Torso Lean (gravity assists forward travel, 0.0° when standing)
-  float forwardLean = 1.8f * currentGaitScale;
+  // Knee flexion is applied strictly to the swinging leg for clean ground clearance (zero stance collapse)
+  float kneeLiftMaxDeg = 10.0f * currentGaitScale;
+  float dKr = 0.0f;
+  float dKl = 0.0f;
+  if (sinP >= 0.0f) {
+    // Phase 1: Right Leg swings in air, Left Leg stance on ground
+    dKr = kneeLiftMaxDeg * sinP * sinP;
+    dKl = 0.0f;
+  } else {
+    // Phase 2: Left Leg swings in air, Right Leg stance on ground
+    dKr = 0.0f;
+    dKl = kneeLiftMaxDeg * (sinP * sinP);
+  }
 
   // 3. Map IK Angles to Physical Servo Positions (Genuine Human Locomotion)
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
-  // Dynamic foot coordination: reduces gap according with hip and knee movement to eliminate collision
-  float aHipR  = (float)servos[0].homeAngle + dHr + forwardLean;
+  float aHipR  = (float)servos[0].homeAngle + dHr;
   float aKneeR = (float)servos[1].homeAngle + dKr;
-  float aFootR = (float)servos[2].homeAngle - (0.22f * dHr + 0.25f * dKr);
+  float aFootR = (float)servos[2].homeAngle - (0.22f * dKr);
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
-  // Left foot dynamically coordinates with left hip and left knee (gap strictly maintained, zero collision!)
-  float aHipL  = (float)servos[3].homeAngle - dHl - forwardLean;
+  // Controlled Left Hip swing: never jackknifes upward into the knee bracket!
+  float aHipL  = (float)servos[3].homeAngle - dHl;
   float aKneeL = (float)servos[4].homeAngle - dKl;
-  float aFootL = (float)servos[5].homeAngle - (0.22f * dHl + 0.25f * dKl);
+  float aFootL = (float)servos[5].homeAngle - (0.22f * dKl);
 
-  // Strict Physical Safety Constraints (Exact Left-Right Mirror Symmetry & Rear Pelvis Lockout)
-  aHipR  = constrain(aHipR,  91.0f, 108.0f); // Never rotates backward below 91.0° (pelvis back-plate lockout!), +14° forward max
-  aKneeR = constrain(aKneeR,   7.5f,  26.0f); // Max bend delta: +18°
-  aFootR = constrain(aFootR,  88.0f,  94.0f); // Safe flex range: 88°-94° (eliminates foot-knee collision)
+  // Strict Physical Safety Constraints (Guaranteed Non-Jamming, Anti-Collision Safe Zones)
+  // Right Leg: Hip forward max 98° (+4°), rear lockout 91° (-3°); Knee 8° to 18°; Foot 88° to 94°
+  aHipR  = constrain(aHipR,  91.0f,  98.0f);
+  aKneeR = constrain(aKneeR,   8.0f,  18.0f);
+  aFootR = constrain(aFootR,  88.0f,  94.0f);
 
-  aHipL  = constrain(aHipL,  80.0f,  97.0f);  // Never rotates backward above 97.0° (pelvis back-plate lockout!), -14° forward max (Mirrored!)
-  aKneeL = constrain(aKneeL, 76.0f,  94.5f); // Max bend delta: -18° (Mirrored!)
-  aFootL = constrain(aFootL, 88.0f,  94.0f); // Safe flex range: 88°-94° (eliminates foot-knee collision)
+  // Left Leg: Hip forward max 89° (-5° safe stop, ZERO knee collision!), rear lockout 96° (+2°); Knee 84° to 94°; Foot 88° to 94°
+  aHipL  = constrain(aHipL,  89.0f,  96.0f);
+  aKneeL = constrain(aKneeL,  84.0f,  94.0f);
+  aFootL = constrain(aFootL,  88.0f,  94.0f);
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1485,12 +1464,12 @@ struct ServoProxy {
   void attach(int pin) {}
 };
 
-ServoProxy hipL   = {4,  3, 80.0f,  97.0f}; // Clamped: never rotates backward above 97.0° into rear frame!
-ServoProxy hipR   = {0,  0, 91.0f, 108.0f}; // Clamped: never rotates backward below 91.0° into rear frame!
-ServoProxy kneeL  = {8,  4, 76.0f,  94.5f}; // Clamped: never hyperextends beyond 94.5°, min 76° bracket stop
-ServoProxy kneeR  = {1,  1,  7.5f,  26.0f}; // Clamped: never hyperextends below 7.5°, max 26° bend
-ServoProxy ankleL = {15, 5, 88.0f,  94.0f}; // Strictly clamped: never exceeds 94.0° to eliminate foot-knee collision!
-ServoProxy ankleR = {12, 2, 88.0f,  94.0f}; // Strictly clamped: never exceeds 94.0° to eliminate foot-knee collision!
+ServoProxy hipL   = {4,  3, 89.0f,  96.0f}; // Strictly clamped: 89° forward stop (zero knee contact), 96° rear stop (zero pelvis contact)
+ServoProxy hipR   = {0,  0, 91.0f,  98.0f}; // Strictly clamped: 98° forward stop, 91° rear stop (zero pelvis contact)
+ServoProxy kneeL  = {8,  4, 84.0f,  94.5f}; // Clamped: 84° max bend, 94.5° extension stop
+ServoProxy kneeR  = {1,  1,  8.0f,  18.0f}; // Clamped: 8.0° extension stop, 18.0° max bend
+ServoProxy ankleL = {15, 5, 88.0f,  94.0f}; // Strictly clamped: 88° to 94° (zero knee contact)
+ServoProxy ankleR = {12, 2, 88.0f,  94.0f}; // Strictly clamped: 88° to 94° (zero knee contact)
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg){
   // Dynamically coordinate foot flexion according with hip swing and knee bend:
@@ -1549,13 +1528,12 @@ void pos(float x, float z, char leg){
 
 void takeStep(float sLength, int stepVelocity){
   int delayMs = (stepVelocity > 0) ? stepVelocity : 25; // Judder-free timing: smooth servo trajectory
-  float sLift = stepClearance;
-  float fwd = 0.35f; // Forward bias keeps feet in clear front space
+  float sLift = min(0.35f, stepClearance);
   // Phase 1: Right stance on ground, Left swing through air
   for (float i = sLength; i >= -sLength; i -= 0.15f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
-    pos(i + fwd, stepHeight, 'r');
-    pos(-i + fwd, stepHeight - sLift, 'l');
+    pos(i, stepHeight, 'r');
+    pos(-i, stepHeight - sLift, 'l');
     delay(delayMs);
     server.handleClient();
   }
@@ -1563,8 +1541,8 @@ void takeStep(float sLength, int stepVelocity){
   // Phase 2: Right swing through air, Left stance on ground
   for (float i = sLength; i >= -sLength; i -= 0.15f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
-    pos(-i + fwd, stepHeight - sLift, 'r');
-    pos(i + fwd, stepHeight, 'l');
+    pos(-i, stepHeight - sLift, 'r');
+    pos(i, stepHeight, 'l');
     delay(delayMs);
     server.handleClient();
   }
@@ -1851,19 +1829,19 @@ void loop() {
       if (activeGaitName == "walk" || activeGaitName == "forward") {
         updateHumanLikeWalk();
       } else if (activeGaitName == "ref_walk") {
-        static float walkI = stepLength;
+        static float walkI = stepLength * 0.6f;
         static int walkPhase = 0;
-        float fwd = 0.35f;
+        float sLift = min(0.35f, stepClearance);
         if (walkPhase == 0) {
-          pos(walkI + fwd, stepHeight, 'r');
-          pos(-walkI + fwd, stepHeight - stepClearance, 'l');
+          pos(walkI, stepHeight, 'r');
+          pos(-walkI, stepHeight - sLift, 'l');
         } else {
-          pos(-walkI + fwd, stepHeight - stepClearance, 'r');
-          pos(walkI + fwd, stepHeight, 'l');
+          pos(-walkI, stepHeight - sLift, 'r');
+          pos(walkI, stepHeight, 'l');
         }
-        walkI -= 0.2f;
-        if (walkI < -stepLength) {
-          walkI = stepLength;
+        walkI -= 0.15f;
+        if (walkI < -(stepLength * 0.6f)) {
+          walkI = stepLength * 0.6f;
           walkPhase = 1 - walkPhase;
         }
       }
