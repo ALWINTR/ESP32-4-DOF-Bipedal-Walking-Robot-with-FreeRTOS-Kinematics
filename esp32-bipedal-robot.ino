@@ -1304,25 +1304,17 @@ void updateHumanLikeWalk() {
   // Forward bias (+0.20cm) ensures leg never reaches back into rear chassis frame!
   float xCenter = 0.20f * currentGaitScale;
   float xAmp    = 0.45f * currentGaitScale; // Half-stride amplitude (4.5mm)
-  float zLift   = 0.45f * currentGaitScale; // Foot clearance lift (4.5mm)
+  float zLift   = min(0.45f, stepClearance * 0.45f) * currentGaitScale; // Smooth foot clearance lift
   float curHeight = stepHeight;             // 10.0cm
 
-  float xr, zr;
-  float xl, zl;
+  // Smooth Cycloidal Liftoff & Touchdown (Zero landing impact shock, C1 continuous velocity)
+  float liftR = (sinP >= 0.0f) ? (zLift * sinP * sinP) : 0.0f;
+  float liftL = (sinP <  0.0f) ? (zLift * sinP * sinP) : 0.0f;
 
-  if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings in air, Left Leg stance on ground
-    xr = xCenter - (xAmp * cosP);
-    zr = curHeight - (zLift * sinP);
-    xl = xCenter + (xAmp * cosP);
-    zl = curHeight;
-  } else {
-    // Phase 2: Left Leg swings in air, Right Leg stance on ground
-    xr = xCenter - (xAmp * cosP);
-    zr = curHeight;
-    xl = xCenter + (xAmp * cosP);
-    zl = curHeight - (zLift * (-sinP));
-  }
+  float xr = xCenter - (xAmp * cosP);
+  float zr = curHeight - liftR;
+  float xl = xCenter + (xAmp * cosP);
+  float zl = curHeight - liftL;
 
   // Real-Time Dynamic Ground Reaction Force & Weight Calculation
   if (currentGaitScale > 0.08f) {
@@ -1539,7 +1531,7 @@ void pos(float x, float z, char leg){
 
 void takeStep(float sLength, int stepVelocity){
   int delayMs = (stepVelocity > 0) ? stepVelocity : 25; // Judder-free timing: smooth servo trajectory
-  float sLift = stepClearance;
+  float sLift = min(0.45f, stepClearance);
   // Phase 1: Right stance on ground, Left swing through air
   for (float i = sLength; i >= -sLength; i -= 0.15f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
@@ -1842,7 +1834,7 @@ void loop() {
       } else if (activeGaitName == "ref_walk") {
         static float walkI = stepLength * 0.6f;
         static int walkPhase = 0;
-        float sLift = stepClearance;
+        float sLift = min(0.45f, stepClearance);
         if (walkPhase == 0) {
           pos(walkI, stepHeight, 'r');
           pos(-walkI, stepHeight - sLift, 'l');
