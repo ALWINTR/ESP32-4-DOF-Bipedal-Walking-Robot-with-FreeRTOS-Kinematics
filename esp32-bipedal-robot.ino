@@ -59,9 +59,9 @@ bool gaitRunning = false;
 // Left Leg:  CH 4 (Hip 94°), CH 8 (Knee 94°), CH 15 (Foot 94°)
 // ==========================================
 float walkFreq         = 0.80f; // Cadence frequency (Hz)
-float stepLength       = 1.6f;  // Cartesian stride length (cm) - 0.8cm reach forward & backward
-float stepClearance    = 0.45f; // Cartesian foot ground clearance lift (cm) - 4.5mm natural lift
-float stepHeight       = 10.55f;// Cartesian standing stance height (cm)
+float stepLength       = 1.6f;  // Cartesian stride length (cm)
+float stepClearance    = 1.00f; // Cartesian foot ground clearance lift (cm) - 1.0cm (user configured)
+float stepHeight       = 10.00f;// Cartesian standing stance height (cm) - 10.0cm (user configured)
 float currentGaitScale = 0.0f;  // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
 
@@ -1529,7 +1529,7 @@ void pos(float x, float z, char leg){
 
 void takeStep(float sLength, int stepVelocity){
   int delayMs = (stepVelocity > 0) ? stepVelocity : 25; // Judder-free timing: smooth servo trajectory
-  float sLift = min(0.35f, stepClearance);
+  float sLift = stepClearance;
   // Phase 1: Right stance on ground, Left swing through air
   for (float i = sLength; i >= -sLength; i -= 0.15f){
     if (!gaitRunning && activeGaitName != "ref_step" && activeGaitName != "ref_walk") break;
@@ -1832,7 +1832,7 @@ void loop() {
       } else if (activeGaitName == "ref_walk") {
         static float walkI = stepLength * 0.6f;
         static int walkPhase = 0;
-        float sLift = min(0.35f, stepClearance);
+        float sLift = stepClearance;
         if (walkPhase == 0) {
           pos(walkI, stepHeight, 'r');
           pos(-walkI, stepHeight - sLift, 'l');
