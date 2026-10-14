@@ -93,16 +93,18 @@ IKResult solveIK(float x, float z) {
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
   // Safe knee lift clamp (3.5° max to prevent bracket collision with foot)
-  float safeLift = constrain(dKnee * 0.25f, 0.0f, 3.5f);
+  float safeLift = constrain(dKnee * 0.22f, 0.0f, 3.5f);
 
   if (leg == 'l') {
-    float aHip  = getJoint(3)->homeAngle + dHip;
+    // Left Leg: Hip decreases for forward swing, Knee decreases for lift
+    float aHip  = getJoint(3)->homeAngle - dHip;
     float aKnee = getJoint(4)->homeAngle - safeLift;
     float aFoot = getJoint(5)->homeAngle; // Strictly flat 94° neutral
     setServoAngle(4,  aHip);
     setServoAngle(8,  aKnee);
     setServoAngle(15, aFoot);
   } else if (leg == 'r') {
+    // Right Leg: Hip increases for forward swing, Knee increases for lift
     float aHip  = getJoint(0)->homeAngle + dHip;
     float aKnee = getJoint(1)->homeAngle + safeLift;
     float aFoot = getJoint(2)->homeAngle; // Strictly flat 94° neutral
@@ -124,22 +126,30 @@ void pos(float x, float z, char leg) {
 }
 
 void takeStep(float sLength, int stepVelocity) {
-  int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
+  int delayMs = (stepVelocity > 0) ? stepVelocity : 25;
   float sClear = min(0.6f, stepClearance);
 
-  // Phase 1: Right Leg stance, Left Leg swing
+  // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L)
   for (float i = sLength; i >= -sLength; i -= 0.15f) {
     pos(i, stepHeight, 'r');
     pos(-i, stepHeight - sClear, 'l');
     delay(delayMs);
   }
 
-  // Phase 2: Right Leg swing, Left Leg stance
+  // Phase 2: Right Leg swing (x: -L -> +L), Left Leg stance (x: +L -> -L)
   for (float i = sLength; i >= -sLength; i -= 0.15f) {
     pos(-i, stepHeight - sClear, 'r');
     pos(i, stepHeight, 'l');
     delay(delayMs);
   }
+
+  // Smooth settle back to neutral stand (x: 0, z: stepHeight)
+  for (float i = sLength; i >= 0.0f; i -= 0.15f) {
+    pos(i, stepHeight, 'r');
+    pos(-i, stepHeight, 'l');
+    delay(delayMs);
+  }
+  parkNeutralStand();
 }
 
 void initialize() {
@@ -171,27 +181,29 @@ void updateLocomotion(float dt) {
   float phase = fmod(2.0f * (float)M_PI * walkFreq * walkTime, 2.0f * (float)M_PI);
   if (phase < 0.0f) phase += 2.0f * (float)M_PI;
 
+  float cosP = cos(phase);
   float sinP = sin(phase);
 
-  // Cartesian Trajectory based on Reference IK Stride Model
+  // Cartesian Trajectory matching reference takeStep:
+  // Phase 1 (0 to PI): Right Leg stance (+L -> -L), Left Leg swing (-L -> +L, lifted)
+  // Phase 2 (PI to 2PI): Right Leg swing (-L -> +L, lifted), Left Leg stance (+L -> -L)
   float sLength = stepLength * currentGaitScale;
   float sClear  = min(0.6f, stepClearance) * currentGaitScale;
   float sHeight = stepHeight;
 
-  float xr, zr, xl, zl;
+  float xr =  cosP * sLength;
+  float xl = -cosP * sLength;
+  float zr = sHeight;
+  float zl = sHeight;
 
   if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings forward in air, Left Leg drives backward in stance
-    xr =  sinP * sLength;
-    zr = sHeight - (sinP * sinP) * sClear;
-    xl = -sinP * sLength;
-    zl = sHeight;
-  } else {
-    // Phase 2: Left Leg swings forward in air, Right Leg drives backward in stance
-    xr =  sinP * sLength; // sinP is negative -> xr < 0
+    // Phase 1: Right Leg stance, Left Leg swing
     zr = sHeight;
-    xl = -sinP * sLength; // -sinP is positive -> xl > 0
-    zl = sHeight - (sinP * sinP) * sClear;
+    zl = sHeight - sinP * sClear;
+  } else {
+    // Phase 2: Right Leg swing, Left Leg stance
+    zr = sHeight - (-sinP) * sClear;
+    zl = sHeight;
   }
 
   // Solve Reference Inverse Kinematics for both legs
@@ -201,17 +213,20 @@ void updateLocomotion(float dt) {
 
   float dHipR   = ikR.hipDeg - nom.hipDeg;
   float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
-  float safeLiftR = constrain(dKneeR * 0.25f, 0.0f, 3.5f);
+  float safeLiftR = constrain(dKneeR * 0.22f, 0.0f, 3.5f);
 
   float dHipL   = ikL.hipDeg - nom.hipDeg;
   float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
-  float safeLiftL = constrain(dKneeL * 0.25f, 0.0f, 3.5f);
+  float safeLiftL = constrain(dKneeL * 0.22f, 0.0f, 3.5f);
 
+  // Raw target angles:
+  // Right Leg: Hip increases forward (+), Knee increases lift (+)
+  // Left Leg:  Hip decreases forward (-), Knee decreases lift (-)
   float targetHipR  = getJoint(0)->homeAngle + dHipR;
   float targetKneeR = getJoint(1)->homeAngle + safeLiftR;
   float targetFootR = getJoint(2)->homeAngle; // Strictly flat 94° neutral
 
-  float targetHipL  = getJoint(3)->homeAngle + dHipL;
+  float targetHipL  = getJoint(3)->homeAngle - dHipL;
   float targetKneeL = getJoint(4)->homeAngle - safeLiftL;
   float targetFootL = getJoint(5)->homeAngle; // Strictly flat 94° neutral
 
@@ -222,7 +237,6 @@ void updateLocomotion(float dt) {
   filteredHipL  += alpha * (targetHipL  - filteredHipL);
   filteredKneeL += alpha * (targetKneeL - filteredKneeL);
 
-  // Send filtered setpoints to PCA9685 driver
   setServoAngle(0,  filteredHipR);
   setServoAngle(1,  filteredKneeR);
   setServoAngle(12, targetFootR);
@@ -284,8 +298,8 @@ void runJointDiagnostics() {
   setServoAngle(1, 11.5f); delay(800);
   setServoAngle(1, 8.0f);  delay(400);
 
-  // Left Hip (CH 4): 94° -> 102° -> 94° (Forward swing)
-  setServoAngle(4, 102.0f); delay(800);
+  // Left Hip (CH 4): 94° -> 86° -> 94° (Forward swing down from 94°)
+  setServoAngle(4, 86.0f); delay(800);
   setServoAngle(4, 94.0f); delay(400);
 
   // Left Knee (CH 8): 94° -> 90.5° -> 94° (safe sweep clear of foot)

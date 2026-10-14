@@ -53,10 +53,10 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 86.0f, 106.0f}, // CH 0: 94° neutral, swing range 86°-106°
+  {0,  "Right Hip",   94.0f, 86.0f, 106.0f}, // CH 0: 94° neutral, swing range 86°-106° (forward >94°)
   {1,  "Right Knee",   8.0f,  8.0f,  12.0f}, // CH 1: 8° straight extension, safe lift to 12.0° (ZERO knee-foot contact!)
   {12, "Right Foot",  94.0f, 94.0f,  95.5f}, // CH 12: strictly flat 94° neutral (ZERO backward collision with knee!)
-  {4,  "Left Hip",    94.0f, 86.0f, 106.0f}, // CH 4: 94° neutral, swing range 86°-106°
+  {4,  "Left Hip",    94.0f, 82.0f, 106.0f}, // CH 4: 94° neutral, swing range 82°-106° (forward <94°)
   {8,  "Left Knee",   94.0f, 90.0f,  94.5f}, // CH 8: 94° straight extension, safe lift to 90.0° (ZERO knee-foot contact!)
   {15, "Left Foot",   94.0f, 93.0f,  94.0f}  // CH 15: strictly flat 94° neutral (ZERO collision with knee!)
 };
