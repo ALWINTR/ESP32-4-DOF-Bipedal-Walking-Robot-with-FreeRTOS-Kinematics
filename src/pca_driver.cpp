@@ -115,6 +115,7 @@ void loadNVSJointOffsets() {
     joints[5].homeAngle = prefs.getFloat("ch15", DEFAULT_JOINTS[5].homeAngle);
 
     for (int i = 0; i < NUM_SERVOS; i++) {
+      joints[i].homeAngle = constrain(joints[i].homeAngle, joints[i].minLimit, joints[i].maxLimit);
       joints[i].currentAngle = joints[i].homeAngle;
       joints[i].targetAngle  = joints[i].homeAngle;
     }

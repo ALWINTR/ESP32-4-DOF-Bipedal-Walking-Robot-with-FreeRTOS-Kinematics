@@ -85,17 +85,17 @@ void updateLocomotion(float dt) {
   float sinP = sin(phase);
 
   // 1. Pure Harmonic Sine Stride (Starts from EXACT 0.0° neutral with zero initial kick)
-  float hipSwingAmp = 5.5f * (stepLength / 1.6f) * currentGaitScale;
+  float hipSwingAmp = 5.0f * (stepLength / 1.6f) * currentGaitScale;
 
   // Symmetrical forward swing & stance propulsion:
-  // Phase 0..PI: Right leg swings forward, Left leg drives stance backward
-  // Phase PI..2PI: Left leg swings forward, Right leg drives stance backward
-  float strideR =  sinP * hipSwingAmp;
-  float strideL = -sinP * hipSwingAmp;
+  // Phase 1 (sinP >= 0): Right swings FORWARD (+), Left drives BACKWARD (-)
+  // Phase 2 (sinP < 0):  Left swings FORWARD (+), Right drives BACKWARD (-)
+  float targetHipR = getJoint(0)->homeAngle + (sinP * hipSwingAmp);
+  float targetHipL = getJoint(3)->homeAngle - (sinP * hipSwingAmp);
 
   // 2. Parabolic Knee Lift (Smooth liftoff and zero-velocity soft touchdown)
-  // 4.0° lift: clean clearance, zero knee-foot contact
-  float maxKneeLift = 4.0f * (stepClearance / 1.0f) * currentGaitScale;
+  // 3.5° lift: clean clearance, zero knee-foot contact
+  float maxKneeLift = 3.5f * (stepClearance / 1.0f) * currentGaitScale;
   float kneeLiftR = 0.0f;
   float kneeLiftL = 0.0f;
 
@@ -110,16 +110,14 @@ void updateLocomotion(float dt) {
   }
 
   // 3. Raw target angles
-  float targetHipR  = getJoint(0)->homeAngle + strideR;
   float targetKneeR = getJoint(1)->homeAngle + kneeLiftR;
   float targetFootR = getJoint(2)->homeAngle; // Strictly flat 94° neutral
 
-  float targetHipL  = getJoint(3)->homeAngle - strideL;
   float targetKneeL = getJoint(4)->homeAngle - kneeLiftL;
   float targetFootL = getJoint(5)->homeAngle; // Strictly flat 94° neutral
 
   // 4. Low-Pass Exponential Smoothing Filter (Absorbs high-frequency gear chatter and deadband hunting)
-  const float alpha = 0.40f;
+  const float alpha = 0.35f;
   filteredHipR  += alpha * (targetHipR  - filteredHipR);
   filteredKneeR += alpha * (targetKneeR - filteredKneeR);
   filteredHipL  += alpha * (targetHipL  - filteredHipL);
@@ -179,20 +177,20 @@ void runJointDiagnostics() {
   parkNeutralStand();
   delay(300);
 
-  // Right Hip (CH 0): 94° -> 102° -> 94°
+  // Right Hip (CH 0): 94° -> 102° -> 94° (Forward swing)
   setServoAngle(0, 102.0f); delay(800);
   setServoAngle(0, 94.0f);  delay(400);
 
-  // Right Knee (CH 1): 8° -> 14.0° -> 8° (safe sweep clear of foot)
-  setServoAngle(1, 14.0f); delay(800);
+  // Right Knee (CH 1): 8° -> 11.5° -> 8° (safe sweep clear of foot)
+  setServoAngle(1, 11.5f); delay(800);
   setServoAngle(1, 8.0f);  delay(400);
 
-  // Left Hip (CH 4): 94° -> 86° -> 94°
-  setServoAngle(4, 86.0f); delay(800);
+  // Left Hip (CH 4): 94° -> 102° -> 94° (Forward swing)
+  setServoAngle(4, 102.0f); delay(800);
   setServoAngle(4, 94.0f); delay(400);
 
-  // Left Knee (CH 8): 94° -> 88.0° -> 94° (safe sweep clear of foot)
-  setServoAngle(8, 88.0f); delay(800);
+  // Left Knee (CH 8): 94° -> 90.5° -> 94° (safe sweep clear of foot)
+  setServoAngle(8, 90.5f); delay(800);
   setServoAngle(8, 94.0f); delay(400);
 
   parkNeutralStand();
