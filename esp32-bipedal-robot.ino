@@ -1300,14 +1300,29 @@ void updateHumanLikeWalk() {
   float sinP = sin(phase);
   float cosP = cos(phase);
 
-  // Scaled Cartesian Step Parameters (in cm)
-  float curStepLen = (stepLength * 0.45f) * currentGaitScale; // Symmetrical half-stride amplitude (cm)
-  float curClear   = stepClearance * currentGaitScale;        // Foot clearance lift (cm)
-  float curHeight  = stepHeight;                              // Stance floor level (cm)
+  // Tuned Cartesian Gait Parameters (cm)
+  // Forward bias (+0.20cm) ensures leg never reaches back into rear chassis frame!
+  float xCenter = 0.20f * currentGaitScale;
+  float xAmp    = 0.45f * currentGaitScale; // Half-stride amplitude (4.5mm)
+  float zLift   = 0.45f * currentGaitScale; // Foot clearance lift (4.5mm)
+  float curHeight = stepHeight;             // 10.0cm
 
-  // Pure symmetrical forward-backward horizontal stride
-  float xr = -curStepLen * cosP;
-  float xl =  curStepLen * cosP;
+  float xr, zr;
+  float xl, zl;
+
+  if (sinP >= 0.0f) {
+    // Phase 1: Right Leg swings in air, Left Leg stance on ground
+    xr = xCenter - (xAmp * cosP);
+    zr = curHeight - (zLift * sinP);
+    xl = xCenter + (xAmp * cosP);
+    zl = curHeight;
+  } else {
+    // Phase 2: Left Leg swings in air, Right Leg stance on ground
+    xr = xCenter - (xAmp * cosP);
+    zr = curHeight;
+    xl = xCenter + (xAmp * cosP);
+    zl = curHeight - (zLift * (-sinP));
+  }
 
   // Real-Time Dynamic Ground Reaction Force & Weight Calculation
   if (currentGaitScale > 0.08f) {
@@ -1337,47 +1352,42 @@ void updateHumanLikeWalk() {
   }
   groundForceNewtons = (weightLeftGrams + weightRightGrams) * 0.00981f;
 
-  // 2. Decoupled Dynamic Locomotion Kinematics (Equal Speed, Matched Stride & Lift)
-  // Full-amplitude symmetrical hip swing (eliminates sluggish left leg micro-stepping)
-  float hipStrideMaxDeg = 7.5f * currentGaitScale;
-  float dHr = hipStrideMaxDeg * (-cosP);
-  float dHl = hipStrideMaxDeg * ( cosP);
+  // 2. Solve True Inverse Kinematics for Both Legs in Real Time
+  IKResult ikR   = solveIK(xr, zr);
+  IKResult ikL   = solveIK(xl, zl);
+  IKResult ikNom = solveIK(0.0f, curHeight);
 
-  // High-clearance knee flexion (14° bend lifts swinging foot 3mm off table, eliminating floor drag friction)
-  float kneeLiftMaxDeg = 14.0f * currentGaitScale;
-  float dKr = 0.0f;
-  float dKl = 0.0f;
-  if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings in air, Left Leg stance on ground
-    dKr = kneeLiftMaxDeg * sinP * sinP;
-    dKl = 0.0f;
-  } else {
-    // Phase 2: Left Leg swings in air, Right Leg stance on ground
-    dKr = 0.0f;
-    dKl = kneeLiftMaxDeg * (sinP * sinP);
-  }
+  // Deltas relative to calibrated standing posture
+  float dHr = ikR.hipDeg - ikNom.hipDeg;
+  float dKr = ikR.kneeDeg - ikNom.kneeDeg;
 
-  // 3. Map IK Angles to Physical Servo Positions (Genuine Human Locomotion)
+  float dHl = ikL.hipDeg - ikNom.hipDeg;
+  float dKl = ikL.kneeDeg - ikNom.kneeDeg;
+
+  // 3. Dynamic Foot-Knee Collision Protection (dynamic leveling flex)
+  float footAdjR = (0.22f * dHr) + (0.25f * dKr);
+  float footAdjL = (0.22f * dHl) + (0.25f * dKl);
+
+  // 4. Map to Physical Servos
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
   float aHipR  = (float)servos[0].homeAngle + dHr;
   float aKneeR = (float)servos[1].homeAngle + dKr;
-  float aFootR = (float)servos[2].homeAngle - (0.22f * dKr);
+  float aFootR = (float)servos[2].homeAngle - footAdjR;
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
-  // Matched speed & travel: Left Hip swings through full 12° identical arc as Right Leg!
   float aHipL  = (float)servos[3].homeAngle - dHl;
   float aKneeL = (float)servos[4].homeAngle - dKl;
-  float aFootL = (float)servos[5].homeAngle - (0.22f * dKl);
+  float aFootL = (float)servos[5].homeAngle - footAdjL;
 
   // Strict Physical Safety Constraints (Guaranteed Non-Jamming, Anti-Collision Safe Zones)
-  // Right Leg: Hip 90° to 102° (12° travel); Knee 8° to 22°; Foot 88° to 94°
-  aHipR  = constrain(aHipR,  90.0f, 102.0f);
-  aKneeR = constrain(aKneeR,   8.0f,  22.0f);
+  // Right Leg: Hip 91° to 103°; Knee 7.5° to 22.0°; Foot 88° to 94°
+  aHipR  = constrain(aHipR,  91.0f, 103.0f);
+  aKneeR = constrain(aKneeR,   7.5f,  22.0f);
   aFootR = constrain(aFootR,  88.0f,  94.0f);
 
-  // Left Leg: Hip 86° to 98° (12° travel, exact match to Right Leg, zero knee/pelvis collision!); Knee 80° to 94°; Foot 88° to 94°
-  aHipL  = constrain(aHipL,  86.0f,  98.0f);
-  aKneeL = constrain(aKneeL,  80.0f,  94.0f);
+  // Left Leg: Hip 85° to 97° (Zero knee contact, zero rear chassis contact!); Knee 80° to 94.5°; Foot 88° to 94°
+  aHipL  = constrain(aHipL,  85.0f,  97.0f);
+  aKneeL = constrain(aKneeL,  80.0f,  94.5f);
   aFootL = constrain(aFootL,  88.0f,  94.0f);
 
   // Apply directly to PWM servo driver
@@ -1465,10 +1475,10 @@ struct ServoProxy {
   void attach(int pin) {}
 };
 
-ServoProxy hipL   = {4,  3, 86.0f,  98.0f}; // 86° forward stop (zero knee contact), 98° rear stop (zero pelvis contact, 12° travel)
-ServoProxy hipR   = {0,  0, 90.0f, 102.0f}; // 102° forward stop, 90° rear stop (zero pelvis contact, 12° travel)
-ServoProxy kneeL  = {8,  4, 80.0f,  94.5f}; // Clamped: 80° max bend (clean 3mm ground clearance), 94.5° extension stop
-ServoProxy kneeR  = {1,  1,  8.0f,  22.0f}; // Clamped: 8.0° extension stop, 22.0° max bend (clean 3mm ground clearance)
+ServoProxy hipL   = {4,  3, 85.0f,  97.0f}; // 85° forward stop (zero knee contact), 97° rear stop (zero pelvis contact)
+ServoProxy hipR   = {0,  0, 91.0f, 103.0f}; // 103° forward stop, 91° rear stop (zero pelvis contact)
+ServoProxy kneeL  = {8,  4, 80.0f,  94.5f}; // Clamped: 80° max bend, 94.5° extension stop
+ServoProxy kneeR  = {1,  1,  7.5f,  22.0f}; // Clamped: 7.5° extension stop, 22.0° max bend
 ServoProxy ankleL = {15, 5, 88.0f,  94.0f}; // Strictly clamped: 88° to 94° (zero knee contact)
 ServoProxy ankleR = {12, 2, 88.0f,  94.0f}; // Strictly clamped: 88° to 94° (zero knee contact)
 
