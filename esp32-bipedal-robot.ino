@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <WebServer.h>
@@ -671,30 +672,26 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
         <!-- Action Cards Grid -->
         <div class="action-grid">
-          <!-- 🟢 START / INITIALIZE STAND (Dedicated Primary Button) -->
-          <div class="action-card act-start" onclick="runGait('start')" style="grid-column: span 2; background: linear-gradient(135deg, rgba(16,185,129,0.28), rgba(6,182,212,0.22)); border: 2px solid var(--accent-emerald); box-shadow: 0 0 18px rgba(16,185,129,0.35);">
-            <div class="action-title" style="color: #6ee7b7; font-size: 0.98rem; font-weight: 900;"><span>🟢 1. START / INITIALIZE STAND</span><span>▶</span></div>
-            <div class="action-desc" style="color: #a7f3d0; font-weight: 700;">Press to initialize robot in Standard Stand position [94°, 8°, 94° | 94°, 94°, 94°]</div>
-          </div>
-          <div class="action-card act-walk" onclick="runGait('walk')">
-            <div class="action-title"><span>🚀 2. Dynamic Walk</span><span>▶</span></div>
-            <div class="action-desc">Continuous fluid biped walking (coordinated reference IK)</div>
+          <!-- 🚀 START FORWARD WALKING (Dedicated Primary Button) -->
+          <div class="action-card act-start" onclick="runGait('walk')" style="grid-column: span 2; background: linear-gradient(135deg, rgba(16,185,129,0.32), rgba(6,182,212,0.25)); border: 2px solid var(--accent-emerald); box-shadow: 0 0 20px rgba(16,185,129,0.38);">
+            <div class="action-title" style="color: #6ee7b7; font-size: 1.02rem; font-weight: 900;"><span>🚀 1. START DYNAMIC WALKING</span><span>▶</span></div>
+            <div class="action-desc" style="color: #a7f3d0; font-weight: 700;">Initiate smooth continuous forward biped locomotion with stance propulsion</div>
           </div>
           <div class="action-card act-step" onclick="runGait('step')">
-            <div class="action-title"><span>🐾 3. Single Stride</span><span>▶</span></div>
-            <div class="action-desc">One complete forward step cycle to neutral</div>
+            <div class="action-title"><span>🐾 2. Single Stride Step</span><span>▶</span></div>
+            <div class="action-desc">One complete smooth forward stride returning to standing neutral</div>
           </div>
           <div class="action-card act-ref" onclick="runGait('ref_step')">
-            <div class="action-title"><span>📐 4. Ref takeStep(2,0)</span><span>▶</span></div>
+            <div class="action-title"><span>📐 3. Ref takeStep(2,0)</span><span>▶</span></div>
             <div class="action-desc">Discrete calibrated IK step sequence</div>
           </div>
           <div class="action-card act-test" onclick="runGait('test')">
-            <div class="action-title"><span>🧪 5. Diagnostics</span><span>▶</span></div>
-            <div class="action-desc">Sequential safety sweep of all 6 servos</div>
+            <div class="action-title"><span>🧪 4. Diagnostics Sweep</span><span>▶</span></div>
+            <div class="action-desc">Sequential gentle safety sweep of all 6 servos</div>
           </div>
-          <div class="action-card act-stop" onclick="runGait('stand')">
-            <div class="action-title"><span>🛑 6. EMERGENCY STOP & PARK STAND</span><span>⏹</span></div>
-            <div class="action-desc">Instantly locks both legs to 100% constant calibrated neutral</div>
+          <div class="action-card act-stop" onclick="runGait('stand')" style="background: linear-gradient(135deg, rgba(239,68,68,0.25), rgba(185,28,28,0.2)); border: 1px solid rgba(239,68,68,0.4);">
+            <div class="action-title" style="color: #fca5a5;"><span>🛑 5. EMERGENCY STOP & PARK STAND</span><span>⏹</span></div>
+            <div class="action-desc">Locks both legs to calibrated standing neutral [94°, 8°, 94° | 94°, 94°, 94°]</div>
           </div>
         </div>
       </div>
@@ -1286,9 +1283,9 @@ void parkStand() {
 void updateHumanLikeWalk() {
   float t = (float)(millis() - walkStartTime) / 1000.0f;
 
-  // 1. Smooth Anti-Jerk Envelope (eases smoothly into motion)
+  // 1. Smooth Anti-Jerk Envelope (eases in continuously over 1.0s, zero initial jolt)
   if (gaitRunning) {
-    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.04f);
+    if (currentGaitScale < 1.0f) currentGaitScale = min(1.0f, currentGaitScale + 0.035f);
   } else {
     if (currentGaitScale > 0.0f) currentGaitScale = max(0.0f, currentGaitScale - 0.05f);
   }
@@ -1300,94 +1297,81 @@ void updateHumanLikeWalk() {
   float sinP = sin(phase);
   float cosP = cos(phase);
 
-  // 1. Cartesian Gait Parameters (cm)
-  // Continuous harmonic biped locomotion: both legs actively stride and propel
-  float xCenter   = 0.25f * currentGaitScale; // Forward bias keeps feet safely out of rear pelvis
-  float xAmp      = 0.35f * currentGaitScale; // Symmetrical stride half-amplitude (3.5mm)
-  float zLift     = min(0.30f, stepClearance * 0.30f) * currentGaitScale; // Foot clearance lift (3.0mm)
-  float curHeight = stepHeight;               // 10.0cm
+  // 2. Harmonic Hip Swing & Active Stance Propulsion
+  // Symmetrical swing forward +9.0°, stance push backward -3.5°
+  float hipSwingAmp    = 7.0f * (stepLength / 1.6f) * currentGaitScale;
+  float hipForwardBias = 3.0f * currentGaitScale; // Forward bias keeps feet clear of rear pelvis
 
-  // Continuous symmetrical horizontal stride:
-  // Right foot swings forward while Left foot drives table backward (propelling robot forward)
-  float xr = xCenter - (xAmp * cosP);
-  float xl = xCenter + (xAmp * cosP);
+  // Harmonic stride trajectory:
+  // Phase 0..PI: Right leg swings in air forward, Left leg on ground drives backward
+  // Phase PI..2PI: Left leg swings in air forward, Right leg on ground drives backward
+  float strideR = -cosP * hipSwingAmp + hipForwardBias;
+  float strideL =  cosP * hipSwingAmp + hipForwardBias;
 
-  float zr, zl;
+  // 3. Smooth Air-to-Ground Parabolic Knee Lift (zero vertical impact touchdown)
+  float maxKneeLift = 8.5f * (stepClearance / 1.0f) * currentGaitScale;
+  float kneeLiftR = 0.0f;
+  float kneeLiftL = 0.0f;
+  float footAdjR  = 0.0f;
+  float footAdjL  = 0.0f;
+
   if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings in air, Left Leg stance on ground
-    zr = curHeight - (zLift * sinP * sinP);
-    zl = curHeight;
+    // Phase 1: Right Leg Swing (Air), Left Leg Stance (Ground)
+    kneeLiftR = (sinP * sinP) * maxKneeLift;      // Smooth parabolic lift, v=0 at liftoff and touchdown!
+    kneeLiftL = 0.0f;                             // Stance knee straight and solid
+    footAdjR  = sinP * (2.2f * currentGaitScale); // Level foot parallel to ground
+    footAdjL  = 0.0f;                             // Stance foot locked flat 94° on floor
   } else {
-    // Phase 2: Left Leg swings in air, Right Leg stance on ground
-    zr = curHeight;
-    zl = curHeight - (zLift * sinP * sinP);
+    // Phase 2: Left Leg Swing (Air), Right Leg Stance (Ground)
+    kneeLiftR = 0.0f;                             // Stance knee straight and solid
+    kneeLiftL = (sinP * sinP) * maxKneeLift;      // Smooth parabolic lift, v=0 at liftoff and touchdown!
+    footAdjR  = 0.0f;                             // Stance foot locked flat 94° on floor
+    footAdjL  = (-sinP) * (2.2f * currentGaitScale); // Level foot safely away from knee bracket
   }
 
-  // Real-Time Dynamic Ground Reaction Force & Weight Calculation
-  if (currentGaitScale > 0.08f) {
-    if (sinP > 0.08f) {
-      // Phase 1: Right leg swing (air), Left leg stance on ground
-      float liftFraction = min(1.0f, sinP * 1.6f);
-      weightRightGrams = max(0.0f, 250.0f * (1.0f - liftFraction));
-      float dynamicAccel = 1.0f + 0.15f * sinP;
-      weightLeftGrams = min(600.0f, (robotTotalWeightGrams - weightRightGrams) * dynamicAccel);
-      groundContactState = (sinP > 0.25f) ? "LEFT SINGLE SUPPORT" : "WEIGHT TRANSFER";
-    } else if (sinP < -0.08f) {
-      // Phase 2: Left leg swing (air), Right leg stance on ground
-      float liftFraction = min(1.0f, (-sinP) * 1.6f);
-      weightLeftGrams = max(0.0f, 250.0f * (1.0f - liftFraction));
-      float dynamicAccel = 1.0f + 0.15f * (-sinP);
-      weightRightGrams = min(600.0f, (robotTotalWeightGrams - weightLeftGrams) * dynamicAccel);
-      groundContactState = (-sinP > 0.25f) ? "RIGHT SINGLE SUPPORT" : "WEIGHT TRANSFER";
+  // 4. Map to Physical Servos
+  // Right Leg: CH 0 Hip (94°), CH 1 Knee (8°), CH 12 Foot (94°)
+  float aHipR  = (float)servos[0].homeAngle + strideR;
+  float aKneeR = (float)servos[1].homeAngle + kneeLiftR;
+  float aFootR = (float)servos[2].homeAngle - footAdjR;
+
+  // Left Leg: CH 4 Hip (94°), CH 8 Knee (94°), CH 15 Foot (94°)
+  float aHipL  = (float)servos[3].homeAngle - strideL;
+  float aKneeL = (float)servos[4].homeAngle - kneeLiftL;
+  float aFootL = (float)servos[5].homeAngle - footAdjL;
+
+  // Physical Safety Constraints: Guaranteed non-jamming, zero knee-foot collision
+  // Right Leg: Hip 88° to 108°; Knee 7.5° to 19.5°; Foot 90.5° to 94.5°
+  aHipR  = constrain(aHipR,  88.0f, 108.0f);
+  aKneeR = constrain(aKneeR,   7.5f,  19.5f);
+  aFootR = constrain(aFootR,  90.5f,  94.5f);
+
+  // Left Leg: Hip 80° to 100°; Knee 83.5° to 94.5°; Foot 90.5° to 94.5°
+  aHipL  = constrain(aHipL,  80.0f, 100.0f);
+  aKneeL = constrain(aKneeL,  83.5f,  94.5f);
+  aFootL = constrain(aFootL,  90.5f,  94.5f);
+
+  // Dynamic Ground Reaction Force & Weight Telemetry
+  if (currentGaitScale > 0.10f) {
+    if (sinP > 0.10f) {
+      weightRightGrams = max(0.0f, 250.0f * (1.0f - sinP));
+      weightLeftGrams  = min(600.0f, (robotTotalWeightGrams - weightRightGrams) * (1.0f + 0.12f * sinP));
+      groundContactState = (sinP > 0.35f) ? "LEFT SINGLE SUPPORT" : "WEIGHT TRANSFER";
+    } else if (sinP < -0.10f) {
+      weightLeftGrams  = max(0.0f, 250.0f * (1.0f - (-sinP)));
+      weightRightGrams = min(600.0f, (robotTotalWeightGrams - weightLeftGrams) * (1.0f + 0.12f * (-sinP)));
+      groundContactState = (-sinP > 0.35f) ? "RIGHT SINGLE SUPPORT" : "WEIGHT TRANSFER";
     } else {
-      weightLeftGrams = 250.0f;
-      weightRightGrams = 250.0f;
+      weightLeftGrams    = 250.0f;
+      weightRightGrams   = 250.0f;
       groundContactState = "DUAL STANCE";
     }
   } else {
-    weightLeftGrams = 250.0f;
-    weightRightGrams = 250.0f;
+    weightLeftGrams    = 250.0f;
+    weightRightGrams   = 250.0f;
     groundContactState = "DUAL STANCE";
   }
   groundForceNewtons = (weightLeftGrams + weightRightGrams) * 0.00981f;
-
-  // 2. Solve True Inverse Kinematics for Both Legs in Real Time
-  IKResult ikR   = solveIK(xr, zr);
-  IKResult ikL   = solveIK(xl, zl);
-  IKResult ikNom = solveIK(0.0f, curHeight);
-
-  // Joint angle deltas relative to standing posture
-  float dHr = ikR.hipDeg - ikNom.hipDeg;
-  float dKr = ikR.kneeDeg - ikNom.kneeDeg;
-
-  float dHl = ikL.hipDeg - ikNom.hipDeg;
-  float dKl = ikL.kneeDeg - ikNom.kneeDeg;
-
-  // 3. Dynamic Foot Leveling (maintains sole parallel to floor during swing)
-  float footAdjR = 0.30f * dHr;
-  float footAdjL = 0.30f * dHl;
-
-  // 4. Map to Physical Servos
-  // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
-  float aHipR  = (float)servos[0].homeAngle + dHr;
-  float aKneeR = (float)servos[1].homeAngle + dKr;
-  float aFootR = (float)servos[2].homeAngle - footAdjR;
-
-  // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
-  float aHipL  = (float)servos[3].homeAngle - dHl;
-  float aKneeL = (float)servos[4].homeAngle - dKl;
-  float aFootL = (float)servos[5].homeAngle - footAdjL;
-
-  // Strict Physical Safety Constraints (Guaranteed Non-Jamming, Rear Chassis Lockout & Anti-Knee Collision)
-  // Right Leg: Hip 92.5° to 101.5°; Knee 7.5° to 17.5°; Foot 91.5° to 94.5°
-  aHipR  = constrain(aHipR,  92.5f, 101.5f);
-  aKneeR = constrain(aKneeR,   7.5f,  17.5f);
-  aFootR = constrain(aFootR,  91.5f,  94.5f);
-
-  // Left Leg: Hip 86.5° to 95.5°; Knee 84.5° to 94.5°; Foot 91.5° to 94.5°
-  aHipL  = constrain(aHipL,  86.5f,  95.5f);
-  aKneeL = constrain(aKneeL,  84.5f,  94.5f);
-  aFootL = constrain(aFootL,  91.5f,  94.5f);
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1400,16 +1384,17 @@ void updateHumanLikeWalk() {
 
 void executeSingleHumanStride() {
   parkStand();
-  delay(300);
+  delay(150);
   gaitRunning = true;
   activeGaitName = "step";
-  currentGaitScale = 1.0f; // Instant full scale for a crisp, complete single stride!
   unsigned long t0 = millis();
   float periodMs = 1000.0f / walkFreq;
   walkStartTime = t0;
   while (millis() - t0 < (unsigned long)periodMs) {
+    float u = (float)(millis() - t0) / periodMs; // 0.0 to 1.0
+    currentGaitScale = sin(u * (float)M_PI);     // Smooth half-sine envelope: 0.0 -> 1.0 -> 0.0
     updateHumanLikeWalk();
-    delay(15);
+    delay(20);
     server.handleClient();
   }
   parkStand();
@@ -1644,15 +1629,17 @@ void handleRunGait() {
     return;
   }
   String gait = server.arg("gait");
-  if (gait == "start" || gait == "stand" || gait == "stop") {
+  if (gait == "stand" || gait == "stop") {
     parkStand();
     server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"stand\"}");
     return;
-  } else if (gait == "walk" || gait == "forward") {
+  } else if (gait == "start" || gait == "walk" || gait == "forward") {
     gaitRunning = true;
     activeGaitName = "walk";
     walkStartTime = millis();
     currentGaitScale = 0.0f; // Smooth ease-in from standing posture!
+    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"walk\"}");
+    return;
   } else if (gait == "step") {
     gaitRunning = false;
     activeGaitName = "step";
@@ -1833,7 +1820,7 @@ void loop() {
 
   if (gaitRunning) {
     static unsigned long lastGaitUpdate = 0;
-    if (millis() - lastGaitUpdate >= 25) { // 40Hz clean servo trajectory, zero blocking delay
+    if (millis() - lastGaitUpdate >= 20) { // 50Hz clean servo trajectory, zero blocking delay, matched to PCA9685
       lastGaitUpdate = millis();
       if (activeGaitName == "walk" || activeGaitName == "forward") {
         updateHumanLikeWalk();
