@@ -96,24 +96,20 @@ IKResult solveIK(float x, float z) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
+  float safeLift = constrain(dKnee, 0.0f, 8.5f);
+  float safeFlex = constrain(dAnkle, -3.5f, 3.5f);
+
   if (leg == 'l') {
-    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 76.0f, 110.0f);
-    float aKnee = constrain(getJoint(4)->homeAngle - constrain(dKnee, 0.0f, 18.0f), 70.0f, 98.0f);
-    float aFoot = constrain(getJoint(5)->homeAngle - dAnkle, 80.0f, 112.0f);
+    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 80.0f, 106.0f);
+    float aKnee = constrain(getJoint(4)->homeAngle - safeLift, 82.0f, 96.0f);
+    float aFoot = constrain(getJoint(5)->homeAngle - safeFlex, 88.0f, 100.0f);
     setServoAngle(4,  aHip);
     setServoAngle(8,  aKnee);
     setServoAngle(15, aFoot);
   } else if (leg == 'r') {
-    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 78.0f, 112.0f);
-    float aKnee = constrain(getJoint(1)->homeAngle + constrain(dKnee, 0.0f, 18.0f), 8.0f, 28.0f);
-    float aFoot;
-    if (dKnee > 1.0f) {
-      // Swing phase: flex forward so heel stays pointing down and forward away from knee
-      aFoot = constrain(getJoint(2)->homeAngle + max(0.0f, dAnkle + 6.0f), 94.0f, 108.0f);
-    } else {
-      // Stance phase: track hip angle to remain flat on the ground
-      aFoot = constrain(getJoint(2)->homeAngle + dAnkle, 82.0f, 108.0f);
-    }
+    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 82.0f, 108.0f);
+    float aKnee = constrain(getJoint(1)->homeAngle + safeLift, 8.0f, 17.5f);
+    float aFoot = constrain(getJoint(2)->homeAngle + safeFlex, 88.0f, 100.0f);
     setServoAngle(0,  aHip);
     setServoAngle(1,  aKnee);
     setServoAngle(12, aFoot);
@@ -133,7 +129,7 @@ void pos(float x, float z, char leg) {
 
 void takeStep(float sLength, int stepVelocity) {
   int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
-  float sClear = min(0.95f, stepClearance);
+  float sClear = min(0.65f, stepClearance);
 
   // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L, lifted)
   for (float i = sLength; i >= -sLength; i -= 0.12f) {
@@ -191,7 +187,7 @@ void updateLocomotion(float dt) {
   float sinP = sin(phase);
 
   float sLength = stepLength * currentGaitScale;
-  float sClear  = min(0.95f, stepClearance) * currentGaitScale;
+  float sClear  = min(0.65f, stepClearance) * currentGaitScale;
   float sHeight = stepHeight;
 
   float xr = 0.0f;
@@ -276,35 +272,21 @@ void updateLocomotion(float dt) {
   float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
   float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
 
-  // Target Joint Setpoints (ALL 6 JOINTS KINEMATICALLY COUPLED):
-  // -------------------------------------------------------------
-  // Right Leg:
-  // CH 0 Hip:   Follows dHipR directly (78° to 112°)
-  // CH 1 Knee:  Holds 8° in stance; full swing lift up to 26° in air (18° lift)
-  // CH 12 Foot: Blended continuously between stance and swing (ZERO step jumps!)
-  float targetHipR  = constrain(getJoint(0)->homeAngle + dHipR, 78.0f, 112.0f);
-  float kneeLiftR   = constrain(dKneeR, 0.0f, 18.0f);
+  // Target Joint Setpoints (ALL 6 JOINTS KINEMATICALLY COUPLED & COLLISION-PROOF):
+  // -------------------------------------------------------------------------------
+  // Both Knees: safe 8.5° lift max (Right Knee [8.0°, 16.5°], Left Knee [85.5°, 94.0°])
+  // Both Feet:  safe +/- 3.5° flex (Right Foot [90.5°, 97.5°], Left Foot [90.5°, 97.5°])
+  // Result: ZERO knee-foot collision on either leg with ample 4mm ground clearance!
+  float kneeLiftR   = constrain(dKneeR, 0.0f, 8.5f);
+  float kneeLiftL   = constrain(dKneeL, 0.0f, 8.5f);
+
+  float targetHipR  = constrain(getJoint(0)->homeAngle + dHipR, 82.0f, 108.0f);
   float targetKneeR = getJoint(1)->homeAngle + kneeLiftR;
+  float targetFootR = constrain(getJoint(2)->homeAngle + constrain(dAnkleR, -3.5f, 3.5f), 88.0f, 100.0f);
 
-  float liftR = max(0.0f, sHeight - zr);
-  float uR = (sClear > 0.01f) ? constrain(liftR / sClear, 0.0f, 1.0f) : 0.0f;
-  float stanceFootR = getJoint(2)->homeAngle + dAnkleR;
-  float swingFootR  = getJoint(2)->homeAngle + max(0.0f, dAnkleR + 6.0f);
-  float targetFootR = constrain((1.0f - uR) * stanceFootR + uR * swingFootR, 82.0f, 108.0f);
-
-  // Left Leg:
-  // CH 4 Hip:   Follows dHipL directly (76° to 110°)
-  // CH 8 Knee:  Holds 94° in stance; lifts up in swing (down to 72°)
-  // CH 15 Foot: Blended continuously between stance and swing
-  float targetHipL  = constrain(getJoint(3)->homeAngle - dHipL, 76.0f, 110.0f);
-  float kneeLiftL   = constrain(dKneeL, 0.0f, 18.0f);
+  float targetHipL  = constrain(getJoint(3)->homeAngle - dHipL, 80.0f, 106.0f);
   float targetKneeL = getJoint(4)->homeAngle - kneeLiftL;
-
-  float liftL = max(0.0f, sHeight - zl);
-  float uL = (sClear > 0.01f) ? constrain(liftL / sClear, 0.0f, 1.0f) : 0.0f;
-  float stanceFootL = getJoint(5)->homeAngle - dAnkleL;
-  float swingFootL  = getJoint(5)->homeAngle - dAnkleL + 4.0f;
-  float targetFootL = constrain((1.0f - uL) * stanceFootL + uL * swingFootL, 80.0f, 112.0f);
+  float targetFootL = constrain(getJoint(5)->homeAngle - constrain(dAnkleL, -3.5f, 3.5f), 88.0f, 100.0f);
 
   // Low-Pass Exponential Smoothing Filter across all 6 joints
   const float alpha = 0.35f;

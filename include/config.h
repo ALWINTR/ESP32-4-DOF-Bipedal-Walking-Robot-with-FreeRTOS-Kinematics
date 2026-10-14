@@ -53,12 +53,12 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 78.0f, 112.0f}, // CH 0: 94° neutral, full kinematic stride 80°-110°
-  {1,  "Right Knee",   8.0f,  8.0f,  28.0f}, // CH 1: 8° straight extension, full swing lift up to 26.0° in air
-  {12, "Right Foot",  94.0f, 82.0f, 110.0f}, // CH 12: 94° flat ground, stance tracks hip, swing >= 94° (zero knee contact!)
-  {4,  "Left Hip",    94.0f, 76.0f, 110.0f}, // CH 4: 94° neutral, full kinematic stride 78°-110°
-  {8,  "Left Knee",   94.0f, 70.0f,  98.0f}, // CH 8: 94° straight extension, full swing lift to 72.0° in air
-  {15, "Left Foot",   94.0f, 80.0f, 112.0f}  // CH 15: 94° flat ground, active stance and swing
+  {0,  "Right Hip",   94.0f, 82.0f, 108.0f}, // CH 0: 94° neutral, safe stride 84°-106°
+  {1,  "Right Knee",   8.0f,  8.0f,  18.0f}, // CH 1: 8° straight extension, safe lift to 16.5° (ZERO foot contact!)
+  {12, "Right Foot",  94.0f, 88.0f, 100.0f}, // CH 12: 94° flat ground, safe flex 90°-98° (ZERO knee contact!)
+  {4,  "Left Hip",    94.0f, 80.0f, 106.0f}, // CH 4: 94° neutral, safe stride 82°-104°
+  {8,  "Left Knee",   94.0f, 82.0f,  96.0f}, // CH 8: 94° straight extension, safe lift to 85.0° (ZERO foot contact!)
+  {15, "Left Foot",   94.0f, 88.0f, 100.0f}  // CH 15: 94° flat ground, safe flex 90°-98° (ZERO knee contact!)
 };
 
 // =============================================================================
@@ -69,9 +69,9 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 #define LINK_SHIN_L2_CM            5.70f  // Shin length l2
 
 #define DEFAULT_WALK_FREQ_HZ       0.55f  // Stable, judder-free cadence frequency
-#define DEFAULT_STEP_LENGTH_CM     1.40f  // Balanced Cartesian stride
-#define DEFAULT_STEP_CLEARANCE_CM  0.95f  // Ample vertical foot lift (prevents ground catching)
-#define DEFAULT_STEP_HEIGHT_CM     9.80f  // Relaxed standing height (prevents knee joint lockout)
+#define DEFAULT_STEP_LENGTH_CM     1.20f  // Balanced Cartesian stride
+#define DEFAULT_STEP_CLEARANCE_CM  0.65f  // Safe ground clearance (zero knee-foot contact)
+#define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
 
 #define ROBOT_TOTAL_WEIGHT_GRAMS   500.0f // Nominal robot mass
 
