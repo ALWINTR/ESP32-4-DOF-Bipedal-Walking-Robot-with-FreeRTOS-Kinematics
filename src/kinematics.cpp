@@ -92,11 +92,9 @@ IKResult solveIK(float x, float z) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
-  // Safe knee lift clamp (3.5° max to prevent bracket collision with foot)
-  float safeLift = constrain(dKnee * 0.22f, 0.0f, 3.5f);
-
   if (leg == 'l') {
-    // Left Leg: Hip decreases for forward swing, Knee decreases for lift
+    // Left Leg: UNTOUCHED
+    float safeLift = constrain(dKnee * 0.22f, 0.0f, 3.5f);
     float aHip  = getJoint(3)->homeAngle - dHip;
     float aKnee = getJoint(4)->homeAngle - safeLift;
     float aFoot = getJoint(5)->homeAngle; // Strictly flat 94° neutral
@@ -104,9 +102,11 @@ void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
     setServoAngle(8,  aKnee);
     setServoAngle(15, aFoot);
   } else if (leg == 'r') {
-    // Right Leg: Hip increases for forward swing, Knee increases for lift
-    float aHip  = getJoint(0)->homeAngle + dHip;
-    float aKnee = getJoint(1)->homeAngle + safeLift;
+    // Right Leg: Gentle knee lift max 1.2° (8.0° to 9.2° max - ZERO foot contact)
+    float safeLiftR = constrain(dKnee * 0.08f, 0.0f, 1.2f);
+    // Right Hip: clamped 88.0° to 100.0° (ZERO backward pelvic over-extension)
+    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 88.0f, 100.0f);
+    float aKnee = getJoint(1)->homeAngle + safeLiftR;
     float aFoot = getJoint(2)->homeAngle; // Strictly flat 94° neutral
     setServoAngle(0,  aHip);
     setServoAngle(1,  aKnee);
@@ -213,19 +213,18 @@ void updateLocomotion(float dt) {
 
   float dHipR   = ikR.hipDeg - nom.hipDeg;
   float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
-  float safeLiftR = constrain(dKneeR * 0.22f, 0.0f, 3.5f);
+  float safeLiftR = constrain(dKneeR * 0.08f, 0.0f, 1.2f); // Max 1.2° knee lift (ZERO foot contact!)
 
   float dHipL   = ikL.hipDeg - nom.hipDeg;
   float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
-  float safeLiftL = constrain(dKneeL * 0.22f, 0.0f, 3.5f);
+  float safeLiftL = constrain(dKneeL * 0.22f, 0.0f, 3.5f); // UNTOUCHED
 
-  // Raw target angles:
-  // Right Leg: Hip increases forward (+), Knee increases lift (+)
-  // Left Leg:  Hip decreases forward (-), Knee decreases lift (-)
-  float targetHipR  = getJoint(0)->homeAngle + dHipR;
+  // Right Leg: Clamped to safe 88.0° - 100.0° swing, Knee 8.0° - 9.2°
+  float targetHipR  = constrain(getJoint(0)->homeAngle + dHipR, 88.0f, 100.0f);
   float targetKneeR = getJoint(1)->homeAngle + safeLiftR;
   float targetFootR = getJoint(2)->homeAngle; // Strictly flat 94° neutral
 
+  // Left Leg: UNTOUCHED
   float targetHipL  = getJoint(3)->homeAngle - dHipL;
   float targetKneeL = getJoint(4)->homeAngle - safeLiftL;
   float targetFootL = getJoint(5)->homeAngle; // Strictly flat 94° neutral
@@ -290,13 +289,13 @@ void runJointDiagnostics() {
   parkNeutralStand();
   delay(300);
 
-  // Right Hip (CH 0): 94° -> 102° -> 94° (Forward swing)
-  setServoAngle(0, 102.0f); delay(800);
+  // Right Hip (CH 0): 94° -> 100° -> 94° (Forward swing)
+  setServoAngle(0, 100.0f); delay(800);
   setServoAngle(0, 94.0f);  delay(400);
 
-  // Right Knee (CH 1): 8° -> 11.5° -> 8° (safe sweep clear of foot)
-  setServoAngle(1, 11.5f); delay(800);
-  setServoAngle(1, 8.0f);  delay(400);
+  // Right Knee (CH 1): 8° -> 9.2° -> 8° (safe sweep clear of foot)
+  setServoAngle(1, 9.2f); delay(800);
+  setServoAngle(1, 8.0f); delay(400);
 
   // Left Hip (CH 4): 94° -> 86° -> 94° (Forward swing down from 94°)
   setServoAngle(4, 86.0f); delay(800);
