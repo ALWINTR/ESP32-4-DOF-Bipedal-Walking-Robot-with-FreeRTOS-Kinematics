@@ -59,8 +59,8 @@ bool gaitRunning = false;
 // Left Leg:  CH 4 (Hip 94°), CH 8 (Knee 94°), CH 15 (Foot 94°)
 // ==========================================
 float walkFreq         = 0.80f; // Cadence frequency (Hz)
-float stepLength       = 2.0f;  // Cartesian stride length (cm) - 1.0cm reach forward & backward
-float stepClearance    = 0.80f; // Cartesian foot ground clearance lift (cm) - 8.0mm lift clears table
+float stepLength       = 1.6f;  // Cartesian stride length (cm) - 0.8cm reach forward & backward
+float stepClearance    = 0.45f; // Cartesian foot ground clearance lift (cm) - 4.5mm natural lift
 float stepHeight       = 10.55f;// Cartesian standing stance height (cm)
 float currentGaitScale = 0.0f;  // Smooth anti-jerk startup and stop ramp
 unsigned long walkStartTime = 0;
@@ -1375,7 +1375,7 @@ void updateHumanLikeWalk() {
   float dAl = ikL.ankleDeg - ikNom.ankleDeg;
 
   // Dynamic Forward Torso Lean (gravity assists forward travel, 0.0° when standing)
-  float forwardLean = 3.5f * currentGaitScale;
+  float forwardLean = 1.8f * currentGaitScale;
 
   // 3. Map IK Angles to Physical Servo Positions (Genuine Human Locomotion)
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
@@ -1390,14 +1390,14 @@ void updateHumanLikeWalk() {
   float aKneeL = (float)servos[4].homeAngle - dKl;
   float aFootL = (float)servos[5].homeAngle - (0.22f * dHl + 0.25f * dKl);
 
-  // Strict Physical Safety Constraints (Collision-free dynamic ranges, zero bracket binding)
-  aHipR  = constrain(aHipR,  82.0f, 112.0f);
-  aKneeR = constrain(aKneeR,  7.5f,  26.0f);
-  aFootR = constrain(aFootR, 88.0f,  94.0f); // Never exceeds 94.0° -> Zero foot-knee collision!
+  // Strict Physical Safety Constraints (Exact Left-Right Mirror Symmetry)
+  aHipR  = constrain(aHipR,  84.0f, 106.0f); // Max swing delta: +12° forward, -10° backward
+  aKneeR = constrain(aKneeR,  7.5f,  26.0f); // Max bend delta: +18°
+  aFootR = constrain(aFootR, 88.0f,  94.0f); // Safe flex range: 88°-94°
 
-  aHipL  = constrain(aHipL,  80.0f, 110.0f);
-  aKneeL = constrain(aKneeL, 76.0f,  94.5f); // Never hyperextends past 94.5°, min 76° bracket stop
-  aFootL = constrain(aFootL, 88.0f,  94.0f); // Never exceeds 94.0° -> Zero foot-knee collision!
+  aHipL  = constrain(aHipL,  82.0f, 104.0f); // Max swing delta: -12° forward, +10° backward (Mirrored!)
+  aKneeL = constrain(aKneeL, 76.0f,  94.5f); // Max bend delta: -18° (Mirrored!)
+  aFootL = constrain(aFootL, 88.0f,  94.0f); // Safe flex range: 88°-94°
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
