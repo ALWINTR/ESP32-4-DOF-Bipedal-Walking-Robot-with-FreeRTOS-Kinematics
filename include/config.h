@@ -53,12 +53,12 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 85.0f, 103.0f}, // CH 0: 94° neutral, safe stride 87°-101°
-  {1,  "Right Knee",   8.0f,  8.0f,  13.5f}, // CH 1: 8° straight extension, safe lift to 12.5° (ZERO foot contact!)
-  {12, "Right Foot",  94.0f, 89.0f,  99.0f}, // CH 12: 94° flat ground, stance leveling 90°-98° (ZERO knee contact!)
-  {4,  "Left Hip",    94.0f, 85.0f, 103.0f}, // CH 4: 94° neutral, safe stride 87°-101°
-  {8,  "Left Knee",   94.0f, 88.5f,  94.0f}, // CH 8: 94° straight extension, safe lift to 89.5° (ZERO foot contact!)
-  {15, "Left Foot",   94.0f, 89.0f,  99.0f}  // CH 15: 94° flat ground, stance leveling 90°-98° (ZERO knee contact!)
+  {0,  "Right Hip",   94.0f, 88.0f, 100.0f}, // CH 0: 94° neutral, safe stride 90°-98°
+  {1,  "Right Knee",   8.0f,  8.0f,  11.5f}, // CH 1: 8° straight extension, safe micro-lift to 10.5° (WIDE physical gap!)
+  {12, "Right Foot",  94.0f, 92.0f,  96.0f}, // CH 12: 94° flat ground, stance leveling 92.5°-95.5° (WIDE physical gap!)
+  {4,  "Left Hip",    94.0f, 88.0f, 100.0f}, // CH 4: 94° neutral, safe stride 90°-98°
+  {8,  "Left Knee",   94.0f, 90.5f,  94.0f}, // CH 8: 94° straight extension, safe micro-lift to 91.5° (WIDE physical gap!)
+  {15, "Left Foot",   94.0f, 92.0f,  96.0f}  // CH 15: 94° flat ground, stance leveling 92.5°-95.5° (WIDE physical gap!)
 };
 
 // =============================================================================
@@ -69,8 +69,8 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 #define LINK_SHIN_L2_CM            5.70f  // Shin length l2
 
 #define DEFAULT_WALK_FREQ_HZ       0.55f  // Stable, judder-free cadence frequency
-#define DEFAULT_STEP_LENGTH_CM     1.00f  // Balanced Cartesian stride
-#define DEFAULT_STEP_CLEARANCE_CM  0.45f  // Safe ground clearance (zero knee-foot contact)
+#define DEFAULT_STEP_LENGTH_CM     0.65f  // Proportional Cartesian stride
+#define DEFAULT_STEP_CLEARANCE_CM  0.25f  // Safe ground clearance micro-lift (maintains wide knee-foot gap)
 #define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
 
 #define ROBOT_TOTAL_WEIGHT_GRAMS   500.0f // Nominal robot mass
