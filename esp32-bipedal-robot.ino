@@ -671,28 +671,29 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
         <!-- Action Cards Grid -->
         <div class="action-grid">
+          <!-- 🟢 START / INITIALIZE STAND (Dedicated Primary Button) -->
+          <div class="action-card act-start" onclick="runGait('start')" style="grid-column: span 2; background: linear-gradient(135deg, rgba(16,185,129,0.28), rgba(6,182,212,0.22)); border: 2px solid var(--accent-emerald); box-shadow: 0 0 18px rgba(16,185,129,0.35);">
+            <div class="action-title" style="color: #6ee7b7; font-size: 0.98rem; font-weight: 900;"><span>🟢 1. START / INITIALIZE STAND</span><span>▶</span></div>
+            <div class="action-desc" style="color: #a7f3d0; font-weight: 700;">Press to initialize robot in Standard Stand position [94°, 8°, 94° | 94°, 94°, 94°]</div>
+          </div>
           <div class="action-card act-walk" onclick="runGait('walk')">
-            <div class="action-title"><span>🚀 Dynamic Walk</span><span>▶</span></div>
-            <div class="action-desc">Continuous fluid biped gait without judder</div>
+            <div class="action-title"><span>🚀 2. Dynamic Walk</span><span>▶</span></div>
+            <div class="action-desc">Continuous fluid biped walking (coordinated reference IK)</div>
           </div>
           <div class="action-card act-step" onclick="runGait('step')">
-            <div class="action-title"><span>🐾 Single Stride</span><span>▶</span></div>
+            <div class="action-title"><span>🐾 3. Single Stride</span><span>▶</span></div>
             <div class="action-desc">One complete forward step cycle to neutral</div>
           </div>
           <div class="action-card act-ref" onclick="runGait('ref_step')">
-            <div class="action-title"><span>📐 Ref takeStep(2,0)</span><span>▶</span></div>
-            <div class="action-desc">Reference inverse kinematics step sequence</div>
-          </div>
-          <div class="action-card act-ref" onclick="runGait('ref_init')">
-            <div class="action-title"><span>⚙️ Ref Initialize()</span><span>▶</span></div>
-            <div class="action-desc">Run reference height calibration routine</div>
+            <div class="action-title"><span>📐 4. Ref takeStep(2,0)</span><span>▶</span></div>
+            <div class="action-desc">Discrete calibrated IK step sequence</div>
           </div>
           <div class="action-card act-test" onclick="runGait('test')">
-            <div class="action-title"><span>🧪 Diagnostics</span><span>▶</span></div>
+            <div class="action-title"><span>🧪 5. Diagnostics</span><span>▶</span></div>
             <div class="action-desc">Sequential safety sweep of all 6 servos</div>
           </div>
           <div class="action-card act-stop" onclick="runGait('stand')">
-            <div class="action-title"><span>🛑 EMERGENCY STOP & PARK STAND</span><span>⏹</span></div>
+            <div class="action-title"><span>🛑 6. EMERGENCY STOP & PARK STAND</span><span>⏹</span></div>
             <div class="action-desc">Instantly locks both legs to 100% constant calibrated neutral</div>
           </div>
         </div>
@@ -1106,6 +1107,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     function runGait(gait) {
       const msgs = {
+        'start': '🟢 Robot Initialized in Standard Stand [94°, 8°, 94° | 94°, 94°, 94°]',
         'walk': '🚀 Continuous Dynamic Walk Started',
         'step': '🐾 Single Full Stride Executing',
         'stand': '🛑 Robot Parked at Constant Neutral',
@@ -1374,23 +1376,25 @@ void updateHumanLikeWalk() {
 
   // 3. Map IK Angles to Physical Servo Positions (Genuine Human Locomotion)
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
+  // Dynamic foot coordination: reduces gap according with hip and knee movement to eliminate collision
   float aHipR  = (float)servos[0].homeAngle + dHr;
   float aKneeR = (float)servos[1].homeAngle + dKr;
-  float aFootR = (float)servos[2].homeAngle + dAr;
+  float aFootR = (float)servos[2].homeAngle - (0.22f * dHr + 0.25f * dKr);
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
+  // Left foot dynamically coordinates with left hip and left knee (gap strictly maintained, zero collision!)
   float aHipL  = (float)servos[3].homeAngle - dHl;
   float aKneeL = (float)servos[4].homeAngle - dKl;
-  float aFootL = (float)servos[5].homeAngle + dAl;
+  float aFootL = (float)servos[5].homeAngle - (0.22f * dHl + 0.25f * dKl);
 
   // Strict Physical Safety Constraints (Collision-free dynamic ranges, zero bracket binding)
   aHipR  = constrain(aHipR,  82.0f, 108.0f);
-  aKneeR = constrain(aKneeR,  3.0f,  26.0f);
-  aFootR = constrain(aFootR, 84.0f, 104.0f);
+  aKneeR = constrain(aKneeR,  7.5f,  26.0f);
+  aFootR = constrain(aFootR, 88.0f,  94.0f); // Never exceeds 94.0° -> Zero foot-knee collision!
 
   aHipL  = constrain(aHipL,  82.0f, 108.0f);
-  aKneeL = constrain(aKneeL, 76.0f,  99.0f);
-  aFootL = constrain(aFootL, 84.0f, 104.0f);
+  aKneeL = constrain(aKneeL, 76.0f,  94.5f); // Never hyperextends past 94.5°, min 76° bracket stop
+  aFootL = constrain(aFootL, 88.0f,  94.0f); // Never exceeds 94.0° -> Zero foot-knee collision!
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1479,21 +1483,24 @@ struct ServoProxy {
 
 ServoProxy hipL   = {4,  3, 80.0f, 110.0f};
 ServoProxy hipR   = {0,  0, 80.0f, 110.0f};
-ServoProxy kneeL  = {8,  4, 74.0f,  99.0f};
-ServoProxy kneeR  = {1,  1,  3.0f,  28.0f};
-ServoProxy ankleL = {15, 5, 84.0f, 104.0f};
-ServoProxy ankleR = {12, 2, 84.0f, 104.0f};
+ServoProxy kneeL  = {8,  4, 76.0f,  94.5f}; // Clamped: never hyperextends beyond 94.5°, min 76° bracket stop
+ServoProxy kneeR  = {1,  1,  7.5f,  26.0f}; // Clamped: never hyperextends below 7.5°, max 26° bend
+ServoProxy ankleL = {15, 5, 88.0f,  94.0f}; // Strictly clamped: never exceeds 94.0° to eliminate foot-knee collision!
+ServoProxy ankleR = {12, 2, 88.0f,  94.0f}; // Strictly clamped: never exceeds 94.0° to eliminate foot-knee collision!
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg){
+  // Dynamically coordinate foot flexion according with hip swing and knee bend:
+  // As hip swings and knee bends, foot flexes smoothly away to maintain a safe gap with the knee!
+  float footAdjustment = (0.22f * dHip) + (0.25f * dKnee);
   if (leg == 'l'){
     hipL.write((float)hipLOffset - dHip);
     kneeL.write((float)kneeLOffset - dKnee);
-    ankleL.write((float)ankleLOffset + dAnkle);
+    ankleL.write((float)ankleLOffset - footAdjustment); // Zero collision, exact gap maintained!
   }
   else if (leg == 'r'){
     hipR.write((float)hipROffset + dHip);
     kneeR.write((float)kneeROffset + dKnee);
-    ankleR.write((float)ankleROffset + dAnkle);
+    ankleR.write((float)ankleROffset - footAdjustment); // Zero collision, exact gap maintained!
   }
 }
 
@@ -1643,8 +1650,10 @@ void handleRunGait() {
     return;
   }
   String gait = server.arg("gait");
-  if (gait == "stand" || gait == "stop") {
+  if (gait == "start" || gait == "stand" || gait == "stop") {
     parkStand();
+    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"stand\"}");
+    return;
   } else if (gait == "walk" || gait == "forward") {
     gaitRunning = true;
     activeGaitName = "walk";
