@@ -1337,13 +1337,14 @@ void updateHumanLikeWalk() {
   }
   groundForceNewtons = (weightLeftGrams + weightRightGrams) * 0.00981f;
 
-  // 2. Decoupled Dynamic Locomotion Kinematics
-  // Hip swing is driven purely by horizontal step displacement (eliminates runaway upward hip jackknife)
-  float dHr = atan2(xr, curHeight) * (180.0f / (float)M_PI);
-  float dHl = atan2(xl, curHeight) * (180.0f / (float)M_PI);
+  // 2. Decoupled Dynamic Locomotion Kinematics (Equal Speed, Matched Stride & Lift)
+  // Full-amplitude symmetrical hip swing (eliminates sluggish left leg micro-stepping)
+  float hipStrideMaxDeg = 7.5f * currentGaitScale;
+  float dHr = hipStrideMaxDeg * (-cosP);
+  float dHl = hipStrideMaxDeg * ( cosP);
 
-  // Knee flexion is applied strictly to the swinging leg for clean ground clearance (zero stance collapse)
-  float kneeLiftMaxDeg = 10.0f * currentGaitScale;
+  // High-clearance knee flexion (14° bend lifts swinging foot 3mm off table, eliminating floor drag friction)
+  float kneeLiftMaxDeg = 14.0f * currentGaitScale;
   float dKr = 0.0f;
   float dKl = 0.0f;
   if (sinP >= 0.0f) {
@@ -1363,20 +1364,20 @@ void updateHumanLikeWalk() {
   float aFootR = (float)servos[2].homeAngle - (0.22f * dKr);
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
-  // Controlled Left Hip swing: never jackknifes upward into the knee bracket!
+  // Matched speed & travel: Left Hip swings through full 12° identical arc as Right Leg!
   float aHipL  = (float)servos[3].homeAngle - dHl;
   float aKneeL = (float)servos[4].homeAngle - dKl;
   float aFootL = (float)servos[5].homeAngle - (0.22f * dKl);
 
   // Strict Physical Safety Constraints (Guaranteed Non-Jamming, Anti-Collision Safe Zones)
-  // Right Leg: Hip forward max 98° (+4°), rear lockout 91° (-3°); Knee 8° to 18°; Foot 88° to 94°
-  aHipR  = constrain(aHipR,  91.0f,  98.0f);
-  aKneeR = constrain(aKneeR,   8.0f,  18.0f);
+  // Right Leg: Hip 90° to 102° (12° travel); Knee 8° to 22°; Foot 88° to 94°
+  aHipR  = constrain(aHipR,  90.0f, 102.0f);
+  aKneeR = constrain(aKneeR,   8.0f,  22.0f);
   aFootR = constrain(aFootR,  88.0f,  94.0f);
 
-  // Left Leg: Hip forward max 89° (-5° safe stop, ZERO knee collision!), rear lockout 96° (+2°); Knee 84° to 94°; Foot 88° to 94°
-  aHipL  = constrain(aHipL,  89.0f,  96.0f);
-  aKneeL = constrain(aKneeL,  84.0f,  94.0f);
+  // Left Leg: Hip 86° to 98° (12° travel, exact match to Right Leg, zero knee/pelvis collision!); Knee 80° to 94°; Foot 88° to 94°
+  aHipL  = constrain(aHipL,  86.0f,  98.0f);
+  aKneeL = constrain(aKneeL,  80.0f,  94.0f);
   aFootL = constrain(aFootL,  88.0f,  94.0f);
 
   // Apply directly to PWM servo driver
@@ -1464,10 +1465,10 @@ struct ServoProxy {
   void attach(int pin) {}
 };
 
-ServoProxy hipL   = {4,  3, 89.0f,  96.0f}; // Strictly clamped: 89° forward stop (zero knee contact), 96° rear stop (zero pelvis contact)
-ServoProxy hipR   = {0,  0, 91.0f,  98.0f}; // Strictly clamped: 98° forward stop, 91° rear stop (zero pelvis contact)
-ServoProxy kneeL  = {8,  4, 84.0f,  94.5f}; // Clamped: 84° max bend, 94.5° extension stop
-ServoProxy kneeR  = {1,  1,  8.0f,  18.0f}; // Clamped: 8.0° extension stop, 18.0° max bend
+ServoProxy hipL   = {4,  3, 86.0f,  98.0f}; // 86° forward stop (zero knee contact), 98° rear stop (zero pelvis contact, 12° travel)
+ServoProxy hipR   = {0,  0, 90.0f, 102.0f}; // 102° forward stop, 90° rear stop (zero pelvis contact, 12° travel)
+ServoProxy kneeL  = {8,  4, 80.0f,  94.5f}; // Clamped: 80° max bend (clean 3mm ground clearance), 94.5° extension stop
+ServoProxy kneeR  = {1,  1,  8.0f,  22.0f}; // Clamped: 8.0° extension stop, 22.0° max bend (clean 3mm ground clearance)
 ServoProxy ankleL = {15, 5, 88.0f,  94.0f}; // Strictly clamped: 88° to 94° (zero knee contact)
 ServoProxy ankleR = {12, 2, 88.0f,  94.0f}; // Strictly clamped: 88° to 94° (zero knee contact)
 
