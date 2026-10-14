@@ -62,6 +62,95 @@ void stopLocomotion() {
   contactState = "DUAL STANCE";
 }
 
+// =============================================================================
+// Analytical 2D Inverse Kinematics Engine (from Reference Code)
+// Links: Thigh l1 = 5.0cm, Shin l2 = 5.7cm, Max Extended Height = 10.7cm
+// =============================================================================
+IKResult solveIK(float x, float z) {
+  IKResult res;
+  float hipRad2 = atan2(x, z);
+  float hipDeg2 = hipRad2 * (180.0f / (float)M_PI);
+
+  float z2 = sqrt(x * x + z * z);
+
+  float val1 = constrain((sq(LINK_THIGH_L1_CM) + sq(z2) - sq(LINK_SHIN_L2_CM)) / (2.0f * LINK_THIGH_L1_CM * z2), -1.0f, 1.0f);
+  float hipRad1 = acos(val1);
+  float hipDeg1 = hipRad1 * (180.0f / (float)M_PI);
+
+  float val2 = constrain((sq(LINK_THIGH_L1_CM) + sq(LINK_SHIN_L2_CM) - sq(z2)) / (2.0f * LINK_THIGH_L1_CM * LINK_SHIN_L2_CM), -1.0f, 1.0f);
+  float kneeRad = (float)M_PI - acos(val2);
+  float kneeDeg = kneeRad * (180.0f / (float)M_PI);
+
+  float val3 = constrain((sq(LINK_SHIN_L2_CM) + sq(z2) - sq(LINK_THIGH_L1_CM)) / (2.0f * LINK_SHIN_L2_CM * z2), -1.0f, 1.0f);
+  float ankleRad = ((float)M_PI / 2.0f) + hipRad2 - acos(val3);
+  float ankleDeg = ankleRad * (180.0f / (float)M_PI);
+
+  res.hipDeg   = hipDeg1 + hipDeg2;
+  res.kneeDeg  = kneeDeg;
+  res.ankleDeg = ankleDeg;
+  return res;
+}
+
+void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
+  // Safe knee lift clamp (3.5° max to prevent bracket collision with foot)
+  float safeLift = constrain(dKnee * 0.25f, 0.0f, 3.5f);
+
+  if (leg == 'l') {
+    float aHip  = getJoint(3)->homeAngle + dHip;
+    float aKnee = getJoint(4)->homeAngle - safeLift;
+    float aFoot = getJoint(5)->homeAngle; // Strictly flat 94° neutral
+    setServoAngle(4,  aHip);
+    setServoAngle(8,  aKnee);
+    setServoAngle(15, aFoot);
+  } else if (leg == 'r') {
+    float aHip  = getJoint(0)->homeAngle + dHip;
+    float aKnee = getJoint(1)->homeAngle + safeLift;
+    float aFoot = getJoint(2)->homeAngle; // Strictly flat 94° neutral
+    setServoAngle(0,  aHip);
+    setServoAngle(1,  aKnee);
+    setServoAngle(12, aFoot);
+  }
+}
+
+void pos(float x, float z, char leg) {
+  IKResult ik  = solveIK(x, z);
+  IKResult nom = solveIK(0.0f, stepHeight);
+
+  float dHip   = ik.hipDeg - nom.hipDeg;
+  float dKnee  = ik.kneeDeg - nom.kneeDeg;
+  float dAnkle = ik.ankleDeg - nom.ankleDeg;
+
+  updateServoPos(dHip, dKnee, dAnkle, leg);
+}
+
+void takeStep(float sLength, int stepVelocity) {
+  int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
+  float sClear = min(0.6f, stepClearance);
+
+  // Phase 1: Right Leg stance, Left Leg swing
+  for (float i = sLength; i >= -sLength; i -= 0.15f) {
+    pos(i, stepHeight, 'r');
+    pos(-i, stepHeight - sClear, 'l');
+    delay(delayMs);
+  }
+
+  // Phase 2: Right Leg swing, Left Leg stance
+  for (float i = sLength; i >= -sLength; i -= 0.15f) {
+    pos(-i, stepHeight - sClear, 'r');
+    pos(i, stepHeight, 'l');
+    delay(delayMs);
+  }
+}
+
+void initialize() {
+  for (float i = 10.7f; i >= stepHeight; i -= 0.05f) {
+    pos(0.0f, i, 'l');
+    pos(0.0f, i, 'r');
+    delay(15);
+  }
+  parkNeutralStand();
+}
+
 void updateLocomotion(float dt) {
   // Smooth Anti-Jerk Envelope
   if (gaitActive) {
@@ -84,39 +173,49 @@ void updateLocomotion(float dt) {
 
   float sinP = sin(phase);
 
-  // 1. Pure Harmonic Sine Stride (Starts from EXACT 0.0° neutral with zero initial kick)
-  float hipSwingAmp = 5.0f * (stepLength / 1.6f) * currentGaitScale;
+  // Cartesian Trajectory based on Reference IK Stride Model
+  float sLength = stepLength * currentGaitScale;
+  float sClear  = min(0.6f, stepClearance) * currentGaitScale;
+  float sHeight = stepHeight;
 
-  // Symmetrical forward swing & stance propulsion:
-  // Phase 1 (sinP >= 0): Right swings FORWARD (+), Left drives BACKWARD (-)
-  // Phase 2 (sinP < 0):  Left swings FORWARD (+), Right drives BACKWARD (-)
-  float targetHipR = getJoint(0)->homeAngle + (sinP * hipSwingAmp);
-  float targetHipL = getJoint(3)->homeAngle - (sinP * hipSwingAmp);
-
-  // 2. Parabolic Knee Lift (Smooth liftoff and zero-velocity soft touchdown)
-  // 3.5° lift: clean clearance, zero knee-foot contact
-  float maxKneeLift = 3.5f * (stepClearance / 1.0f) * currentGaitScale;
-  float kneeLiftR = 0.0f;
-  float kneeLiftL = 0.0f;
+  float xr, zr, xl, zl;
 
   if (sinP >= 0.0f) {
-    // Phase 1: Right Leg swings in air, Left Leg stance on ground
-    kneeLiftR = (sinP * sinP) * maxKneeLift;
-    kneeLiftL = 0.0f;
+    // Phase 1: Right Leg swings forward in air, Left Leg drives backward in stance
+    xr =  sinP * sLength;
+    zr = sHeight - (sinP * sinP) * sClear;
+    xl = -sinP * sLength;
+    zl = sHeight;
   } else {
-    // Phase 2: Left Leg swings in air, Right Leg stance on ground
-    kneeLiftR = 0.0f;
-    kneeLiftL = (sinP * sinP) * maxKneeLift;
+    // Phase 2: Left Leg swings forward in air, Right Leg drives backward in stance
+    xr =  sinP * sLength; // sinP is negative -> xr < 0
+    zr = sHeight;
+    xl = -sinP * sLength; // -sinP is positive -> xl > 0
+    zl = sHeight - (sinP * sinP) * sClear;
   }
 
-  // 3. Raw target angles
-  float targetKneeR = getJoint(1)->homeAngle + kneeLiftR;
+  // Solve Reference Inverse Kinematics for both legs
+  IKResult ikR = solveIK(xr, zr);
+  IKResult ikL = solveIK(xl, zl);
+  IKResult nom = solveIK(0.0f, sHeight);
+
+  float dHipR   = ikR.hipDeg - nom.hipDeg;
+  float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
+  float safeLiftR = constrain(dKneeR * 0.25f, 0.0f, 3.5f);
+
+  float dHipL   = ikL.hipDeg - nom.hipDeg;
+  float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
+  float safeLiftL = constrain(dKneeL * 0.25f, 0.0f, 3.5f);
+
+  float targetHipR  = getJoint(0)->homeAngle + dHipR;
+  float targetKneeR = getJoint(1)->homeAngle + safeLiftR;
   float targetFootR = getJoint(2)->homeAngle; // Strictly flat 94° neutral
 
-  float targetKneeL = getJoint(4)->homeAngle - kneeLiftL;
+  float targetHipL  = getJoint(3)->homeAngle + dHipL;
+  float targetKneeL = getJoint(4)->homeAngle - safeLiftL;
   float targetFootL = getJoint(5)->homeAngle; // Strictly flat 94° neutral
 
-  // 4. Low-Pass Exponential Smoothing Filter (Absorbs high-frequency gear chatter and deadband hunting)
+  // Low-Pass Exponential Smoothing Filter (Absorbs high-frequency gear chatter and deadband hunting)
   const float alpha = 0.35f;
   filteredHipR  += alpha * (targetHipR  - filteredHipR);
   filteredKneeR += alpha * (targetKneeR - filteredKneeR);
@@ -131,7 +230,7 @@ void updateLocomotion(float dt) {
   setServoAngle(8,  filteredKneeL);
   setServoAngle(15, targetFootL);
 
-  // 4. Real-Time Dynamic Ground Reaction Force Telemetry
+  // Real-Time Dynamic Ground Reaction Force Telemetry
   if (currentGaitScale > 0.10f) {
     if (sinP > 0.10f) {
       weightRight = max(0.0f, 250.0f * (1.0f - sinP));

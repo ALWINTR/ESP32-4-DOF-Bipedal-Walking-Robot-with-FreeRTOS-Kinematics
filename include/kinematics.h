@@ -29,6 +29,19 @@ void runJointDiagnostics();
 // Real-time parameter tuning
 void setGaitParam(const String& param, float val);
 
+// 2D Analytical Inverse Kinematics (from reference code)
+struct IKResult {
+  float hipDeg;
+  float kneeDeg;
+  float ankleDeg;
+};
+
+IKResult solveIK(float x, float z);
+void pos(float x, float z, char leg);
+void updateServoPos(float dHip, float dKnee, float dAnkle, char leg);
+void takeStep(float stepLength, int stepVelocity);
+void initialize();
+
 // Telemetry accessor
 LocomotionTelemetry getLocomotionTelemetry();
 

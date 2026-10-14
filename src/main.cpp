@@ -37,6 +37,15 @@ void handleSerialCommands() {
     Serial.println("[CLI] Executing Single Full Human Stride...");
     executeSingleStep();
     Serial.println("[CLI] Stride Complete. Settled in Stand Neutral.");
+  } else if (cmd == "takestep" || cmd == "ref_step") {
+    Serial.println("[CLI] Executing Reference takeStep(1.6, 20)...");
+    takeStep(1.6f, 20);
+    stopLocomotion();
+    Serial.println("[CLI] Reference takeStep Complete.");
+  } else if (cmd == "init" || cmd == "initialize") {
+    Serial.println("[CLI] Executing Reference initialize()...");
+    initialize();
+    Serial.println("[CLI] Reference initialize Complete.");
   } else if (cmd == "stop" || cmd == "stand" || cmd == "park") {
     Serial.println("[CLI] Settling to Calibrated Stand Neutral.");
     stopLocomotion();

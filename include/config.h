@@ -64,6 +64,10 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 // =============================================================================
 // 4. Kinematics & Locomotion Tuning Defaults
 // =============================================================================
+// Link Dimensions from Reference Inverse Kinematics (cm)
+#define LINK_THIGH_L1_CM           5.00f  // Thigh length l1
+#define LINK_SHIN_L2_CM            5.70f  // Shin length l2
+
 #define DEFAULT_WALK_FREQ_HZ       0.65f  // Calm, judder-free cadence frequency
 #define DEFAULT_STEP_LENGTH_CM     1.60f  // Cartesian stride scaling
 #define DEFAULT_STEP_CLEARANCE_CM  1.00f  // Cartesian foot ground clearance

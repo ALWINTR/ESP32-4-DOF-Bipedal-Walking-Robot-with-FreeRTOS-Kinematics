@@ -53,6 +53,13 @@ static void handleRunGait() {
   } else if (gait == "step") {
     server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"step\"}");
     executeSingleStep();
+  } else if (gait == "ref_step" || gait == "takestep") {
+    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"ref_step\"}");
+    takeStep(1.6f, 20);
+    stopLocomotion();
+  } else if (gait == "init" || gait == "initialize") {
+    server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"initialize\"}");
+    initialize();
   } else if (gait == "test" || gait == "test_joints") {
     server.send(200, "application/json", "{\"status\":\"ok\",\"gait\":\"test\"}");
     runJointDiagnostics();
