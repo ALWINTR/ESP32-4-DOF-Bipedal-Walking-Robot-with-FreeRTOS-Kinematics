@@ -1363,28 +1363,38 @@ void updateHumanLikeWalk() {
   float dHl = max(0.0f, ikL.hipDeg - ikNom.hipDeg);
   float dKl = max(0.0f, ikL.kneeDeg - ikNom.kneeDeg);
 
-  // 3. Map to Physical Servos
-  // Both feet strictly locked to 94.0° flat ground plane - GUARANTEES ZERO KNEE-FOOT CONTACT!
+  // 3. Dynamic Foot Articulation (gentle 2.0° flex away from knee during swing)
+  float footFlexMaxDeg = 2.0f * currentGaitScale;
+  float aFootR, aFootL;
+
+  if (sinP >= 0.0f) {
+    // Phase 1: Right Leg swings in air, Left Leg stance flat on ground
+    aFootR = (float)servos[2].homeAngle - (footFlexMaxDeg * sinP);
+    aFootL = (float)servos[5].homeAngle; // Locked flat 94.0° stance
+  } else {
+    // Phase 2: Left Leg swings in air, Right Leg stance flat on ground
+    aFootR = (float)servos[2].homeAngle; // Locked flat 94.0° stance
+    aFootL = (float)servos[5].homeAngle - (footFlexMaxDeg * (-sinP));
+  }
+
   // Right Leg (CH 0 Hip 94°, CH 1 Knee 8°, CH 12 Foot 94°)
   float aHipR  = (float)servos[0].homeAngle + dHr;
   float aKneeR = (float)servos[1].homeAngle + dKr;
-  float aFootR = (float)servos[2].homeAngle; // Strictly flat 94.0°
 
   // Left Leg (CH 4 Hip 94°, CH 8 Knee 94°, CH 15 Foot 94° - Mirrored mounting)
   float aHipL  = (float)servos[3].homeAngle - dHl;
   float aKneeL = (float)servos[4].homeAngle - dKl;
-  float aFootL = (float)servos[5].homeAngle; // Strictly flat 94.0°
 
   // Strict Physical Safety Constraints (Guaranteed Non-Jamming, Rear Chassis Lockout & Anti-Knee Collision)
-  // Right Leg: Hip 94° to 100.0°; Knee 8.0° to 14.0°; Foot strictly 94.0°
+  // Right Leg: Hip 94° to 100.0°; Knee 8.0° to 14.0°; Foot 91.5° to 94.0°
   aHipR  = constrain(aHipR,  94.0f, 100.0f);
   aKneeR = constrain(aKneeR,   8.0f,  14.0f);
-  aFootR = 94.0f;
+  aFootR = constrain(aFootR,  91.5f,  94.0f);
 
-  // Left Leg: Hip 88.0° to 94.0° (Zero rear swing into pelvis!); Knee 88.0° to 94.5° (Zero knee-foot contact!); Foot strictly 94.0°
+  // Left Leg: Hip 88.0° to 94.0° (Zero rear swing into pelvis!); Knee 88.0° to 94.5° (Zero knee-foot contact!); Foot 91.5° to 94.0°
   aHipL  = constrain(aHipL,  88.0f,  94.0f);
   aKneeL = constrain(aKneeL,  88.0f,  94.5f);
-  aFootL = 94.0f;
+  aFootL = constrain(aFootL,  91.5f,  94.0f);
 
   // Apply directly to PWM servo driver
   servos[0].currentAngle = aHipR;  setServoAngleDirect(0,  aHipR);  // CH 0 Right Hip
@@ -1475,19 +1485,20 @@ ServoProxy hipL   = {4,  3, 88.0f,  94.0f}; // 88° forward max, 94° rear stop 
 ServoProxy hipR   = {0,  0, 94.0f, 100.0f}; // 94° rear stop, 100° forward max (zero pelvis contact)
 ServoProxy kneeL  = {8,  4, 88.0f,  94.5f}; // 88° max bend (100% clearance from foot), 94.5° extension
 ServoProxy kneeR  = {1,  1,  8.0f,  14.0f}; // 8.0° extension, 14.0° max bend (100% clearance from foot)
-ServoProxy ankleL = {15, 5, 93.5f,  94.5f}; // Strictly locked to 94.0° flat ground plane
-ServoProxy ankleR = {12, 2, 93.5f,  94.5f}; // Strictly locked to 94.0° flat ground plane
+ServoProxy ankleL = {15, 5, 91.5f,  94.5f}; // 91.5° to 94.0° safe foot articulation (zero knee contact)
+ServoProxy ankleR = {12, 2, 91.5f,  94.5f}; // 91.5° to 94.0° safe foot articulation (zero knee contact)
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg){
+  float footAdjustment = constrain(0.20f * dKnee, 0.0f, 2.0f); // Gentle 1-2° ankle flexion
   if (leg == 'l'){
     hipL.write((float)hipLOffset - dHip);
     kneeL.write((float)kneeLOffset - dKnee);
-    ankleL.write((float)ankleLOffset); // Strictly locked flat 94.0°
+    ankleL.write((float)ankleLOffset - footAdjustment); // 94° down to 92° (flexes safely away from knee!)
   }
   else if (leg == 'r'){
     hipR.write((float)hipROffset + dHip);
     kneeR.write((float)kneeROffset + dKnee);
-    ankleR.write((float)ankleROffset); // Strictly locked flat 94.0°
+    ankleR.write((float)ankleROffset - footAdjustment); // 94° down to 92° (flexes safely away from knee!)
   }
 }
 
