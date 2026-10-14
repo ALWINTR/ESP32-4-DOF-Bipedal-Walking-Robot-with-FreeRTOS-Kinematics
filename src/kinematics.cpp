@@ -96,20 +96,20 @@ IKResult solveIK(float x, float z) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
-  float safeLift = constrain(dKnee, 0.0f, 2.2f);
-  float safeFlex = constrain(dAnkle, -1.4f, 1.4f);
+  float safeLift = constrain(dKnee * 0.40f, 0.0f, 3.5f);
+  float safeFlex = constrain(dAnkle * 0.50f, -3.0f, 3.0f);
 
   if (leg == 'l') {
-    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 88.0f, 100.0f);
-    float aKnee = constrain(getJoint(4)->homeAngle - safeLift, 91.0f, 94.0f);
-    float aFoot = constrain(getJoint(5)->homeAngle - safeFlex, 92.5f, 95.5f);
+    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 85.0f, 103.0f);
+    float aKnee = constrain(getJoint(4)->homeAngle - safeLift, 89.5f, 94.0f);
+    float aFoot = constrain(getJoint(5)->homeAngle - safeFlex, 91.0f, 98.0f);
     setServoAngle(4,  aHip);
     setServoAngle(8,  aKnee);
     setServoAngle(15, aFoot);
   } else if (leg == 'r') {
-    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 88.0f, 100.0f);
-    float aKnee = constrain(getJoint(1)->homeAngle + safeLift, 8.0f, 11.0f);
-    float aFoot = constrain(getJoint(2)->homeAngle + safeFlex, 92.5f, 95.5f);
+    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 85.0f, 103.0f);
+    float aKnee = constrain(getJoint(1)->homeAngle + safeLift, 8.0f, 12.5f);
+    float aFoot = constrain(getJoint(2)->homeAngle + safeFlex, 91.0f, 98.0f);
     setServoAngle(0,  aHip);
     setServoAngle(1,  aKnee);
     setServoAngle(12, aFoot);
@@ -129,7 +129,7 @@ void pos(float x, float z, char leg) {
 
 void takeStep(float sLength, int stepVelocity) {
   int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
-  float sClear = min(0.25f, stepClearance);
+  float sClear = min(0.35f, stepClearance);
 
   // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L, lifted)
   for (float i = sLength; i >= -sLength; i -= 0.12f) {
@@ -187,7 +187,7 @@ void updateLocomotion(float dt) {
   float sinP = sin(phase);
 
   float sLength = stepLength * currentGaitScale;
-  float sClear  = min(0.25f, stepClearance) * currentGaitScale;
+  float sClear  = min(0.35f, stepClearance) * currentGaitScale;
   float sHeight = stepHeight;
 
   float xr = 0.0f;
@@ -272,19 +272,19 @@ void updateLocomotion(float dt) {
   float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
   float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
 
-  // Target Joint Setpoints (PROPORTIONAL 6-JOINT COUPLING WITH WIDE KNEE-FOOT AIR GAP):
-  // 1. Hips: Compact, smooth stride (90.2° to 97.8°)
-  float targetHipR = constrain(getJoint(0)->homeAngle + dHipR, 89.5f, 98.5f);
-  float targetHipL = constrain(getJoint(3)->homeAngle - dHipL, 89.5f, 98.5f);
+  // Target Joint Setpoints (PROPORTIONAL 6-JOINT KINEMATIC COUPLING WITH WIDE KNEE-FOOT AIR GAP):
+  // 1. Hips: Strides smoothly through natural IK arc
+  float targetHipR = constrain(getJoint(0)->homeAngle + dHipR, 85.0f, 103.0f);
+  float targetHipL = constrain(getJoint(3)->homeAngle - dHipL, 85.0f, 103.0f);
 
-  // 2. Knees: locked straight in stance, gentle micro-lift in swing (max 2.2° bend)
-  // Maintains a wide, safe physical gap of > 18mm between knee and foot brackets at all times!
-  float maxKneeLift = 2.2f * currentGaitScale;
+  // 2. Knees: locked straight in stance, gentle micro-lift in swing (max 3.5° bend)
+  // Maintains a wide, safe physical gap of > 15mm between knee and foot brackets at all times!
+  float maxKneeLift = 3.5f * currentGaitScale;
   float targetKneeR = getJoint(1)->homeAngle; // 8.0°
   float targetKneeL = getJoint(4)->homeAngle; // 94.0°
 
   if (activeGaitName == "crouch" || activeGaitName == "squat") {
-    float squatLift = (0.5f - 0.5f * cosP) * 2.2f * currentGaitScale;
+    float squatLift = (0.5f - 0.5f * cosP) * 3.5f * currentGaitScale;
     targetKneeR += squatLift;
     targetKneeL -= squatLift;
   } else {
@@ -296,11 +296,12 @@ void updateLocomotion(float dt) {
       targetKneeL -= sinP * maxKneeLift;
     }
   }
-  targetKneeR = constrain(targetKneeR, 8.0f, 10.5f);
-  targetKneeL = constrain(targetKneeL, 91.5f, 94.0f);
+  targetKneeR = constrain(targetKneeR, 8.0f, 12.5f);
+  targetKneeL = constrain(targetKneeL, 89.5f, 94.0f);
 
-  // 3. Feet: Smooth ground tracking in stance, zero backward tilt in swing
-  // Maintains wide air gap to knee on both legs
+  // 3. Feet: Active Ground Tracking in Stance, Neutral in Swing
+  // In stance: foot actively tilts with hip and ground reaction to keep sole flat on floor.
+  // In swing: foot blends smoothly into neutral 94.0° so the heel NEVER tilts towards the knee!
   float targetFootR;
   float targetFootL;
 
@@ -308,8 +309,8 @@ void updateLocomotion(float dt) {
     targetFootR = getJoint(2)->homeAngle;
     targetFootL = getJoint(5)->homeAngle;
   } else {
-    // Right Leg: stance follows hip slightly (+/- 1.4°), swing smoothly stays at neutral 94.0°
-    float stanceFootR = getJoint(2)->homeAngle + constrain(dHipR * 0.40f, -1.4f, 1.4f);
+    // Right Leg: stance follows dAnkleR (up to +/- 3.0°), swing smoothly stays at neutral 94.0°
+    float stanceFootR = getJoint(2)->homeAngle + constrain(dAnkleR * 0.50f, -3.0f, 3.0f);
     if (sinP >= 0.0f) {
       targetFootR = stanceFootR;
     } else {
@@ -317,8 +318,8 @@ void updateLocomotion(float dt) {
       targetFootR = (1.0f - uR) * stanceFootR + uR * getJoint(2)->homeAngle;
     }
 
-    // Left Leg: stance follows hip slightly (+/- 1.4°), swing smoothly stays at neutral 94.0°
-    float stanceFootL = getJoint(5)->homeAngle - constrain(dHipL * 0.40f, -1.4f, 1.4f);
+    // Left Leg: stance follows dAnkleL (up to +/- 3.0°), swing smoothly stays at neutral 94.0°
+    float stanceFootL = getJoint(5)->homeAngle - constrain(dAnkleL * 0.50f, -3.0f, 3.0f);
     if (sinP < 0.0f) {
       targetFootL = stanceFootL;
     } else {
@@ -327,8 +328,8 @@ void updateLocomotion(float dt) {
     }
   }
 
-  targetFootR = constrain(targetFootR, 92.5f, 95.5f);
-  targetFootL = constrain(targetFootL, 92.5f, 95.5f);
+  targetFootR = constrain(targetFootR, 91.0f, 98.0f);
+  targetFootL = constrain(targetFootL, 91.0f, 98.0f);
 
   // Low-Pass Exponential Smoothing Filter across all 6 joints
   const float alpha = 0.28f;
