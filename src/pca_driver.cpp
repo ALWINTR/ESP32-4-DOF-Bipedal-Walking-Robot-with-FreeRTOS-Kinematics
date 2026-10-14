@@ -5,30 +5,39 @@ static Adafruit_PWMServoDriver pwm(PCA9685_I2C_ADDR);
 static Preferences prefs;
 static bool pcaConnected = false;
 static JointState joints[NUM_SERVOS];
+static SemaphoreHandle_t i2cMutex = NULL;
 
 bool initPCA() {
-  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  Wire.setClock(I2C_FREQUENCY_HZ);
-  Wire.setTimeOut(50);
-
-  Wire.beginTransmission(PCA9685_I2C_ADDR);
-  if (Wire.endTransmission() == 0) {
-    pwm.begin();
-    pwm.setPWMFreq(PCA9685_PWM_FREQ_HZ);
-    delay(20);
-    pcaConnected = true;
-
-    for (int i = 0; i < NUM_SERVOS; i++) {
-      joints[i].lastPulseLen = -1;
-    }
-    Serial.printf("[PCA9685] Detected and initialized at 0x%02X (%dHz PWM, 400kHz I2C)\n",
-                  PCA9685_I2C_ADDR, PCA9685_PWM_FREQ_HZ);
-    return true;
+  if (i2cMutex == NULL) {
+    i2cMutex = xSemaphoreCreateMutex();
   }
 
-  pcaConnected = false;
-  Serial.printf("[PCA9685] NOT found at 0x%02X on SDA=%d, SCL=%d. Will auto-retry.\n",
-                PCA9685_I2C_ADDR, PIN_I2C_SDA, PIN_I2C_SCL);
+  if (i2cMutex && xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+    Wire.setClock(I2C_FREQUENCY_HZ);
+    Wire.setTimeOut(50);
+
+    Wire.beginTransmission(PCA9685_I2C_ADDR);
+    if (Wire.endTransmission() == 0) {
+      pwm.begin();
+      pwm.setPWMFreq(PCA9685_PWM_FREQ_HZ);
+      delay(20);
+      pcaConnected = true;
+
+      for (int i = 0; i < NUM_SERVOS; i++) {
+        joints[i].lastPulseLen = -1;
+      }
+      Serial.printf("[PCA9685] Detected and initialized at 0x%02X (%dHz PWM, 400kHz I2C)\n",
+                    PCA9685_I2C_ADDR, PCA9685_PWM_FREQ_HZ);
+      xSemaphoreGive(i2cMutex);
+      return true;
+    }
+    pcaConnected = false;
+    Serial.printf("[PCA9685] NOT found at 0x%02X on SDA=%d, SCL=%d. Will auto-retry.\n",
+                  PCA9685_I2C_ADDR, PIN_I2C_SDA, PIN_I2C_SCL);
+    xSemaphoreGive(i2cMutex);
+    return false;
+  }
   return false;
 }
 
@@ -74,13 +83,14 @@ void setServoAngle(int channel, float angle) {
   // Convert microseconds to 12-bit PCA9685 tick count (20ms cycle @ 50Hz)
   int pulselen = (int)round((us * 4096.0f) / 20000.0f);
 
-  if (idx != -1) {
-    if (joints[idx].lastPulseLen != pulselen) {
-      joints[idx].lastPulseLen = pulselen;
-      pwm.setPWM(channel, 0, pulselen);
-    }
-  } else {
+  if (idx != -1 && joints[idx].lastPulseLen == pulselen) {
+    return; // Already at exact PWM pulse length - zero bus traffic
+  }
+
+  if (i2cMutex && xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(15)) == pdTRUE) {
+    if (idx != -1) joints[idx].lastPulseLen = pulselen;
     pwm.setPWM(channel, 0, pulselen);
+    xSemaphoreGive(i2cMutex);
   }
 }
 
