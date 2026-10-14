@@ -17,6 +17,19 @@ static float weightRight      = 250.0f;
 static float groundForceN     = 4.905f;
 static String contactState    = "DUAL STANCE";
 
+// Low-pass EMA filter state for silky-smooth servo tracking
+static float filteredHipR  = 94.0f;
+static float filteredKneeR =  8.0f;
+static float filteredHipL  = 94.0f;
+static float filteredKneeL = 94.0f;
+
+static void resetFilters() {
+  JointState* j0 = getJoint(0); if (j0) filteredHipR  = j0->homeAngle;
+  JointState* j1 = getJoint(1); if (j1) filteredKneeR = j1->homeAngle;
+  JointState* j3 = getJoint(3); if (j3) filteredHipL  = j3->homeAngle;
+  JointState* j4 = getJoint(4); if (j4) filteredKneeL = j4->homeAngle;
+}
+
 void initKinematics() {
   currentGaitScale = 0.0f;
   walkTime         = 0.0f;
@@ -26,6 +39,7 @@ void initKinematics() {
   weightRight      = 250.0f;
   groundForceN     = 4.905f;
   contactState     = "DUAL STANCE";
+  resetFilters();
 }
 
 void startLocomotion(const String& gait) {
@@ -33,6 +47,7 @@ void startLocomotion(const String& gait) {
   activeGaitName = gait;
   currentGaitScale = 0.0f; // Smooth ease-in from standing posture
   walkTime = 0.0f;
+  resetFilters();
 }
 
 void stopLocomotion() {
@@ -40,6 +55,7 @@ void stopLocomotion() {
   activeGaitName = "stand";
   currentGaitScale = 0.0f;
   parkNeutralStand();
+  resetFilters();
   weightLeft   = 250.0f;
   weightRight  = 250.0f;
   groundForceN = 4.905f;
@@ -50,12 +66,12 @@ void updateLocomotion(float dt) {
   // Smooth Anti-Jerk Envelope
   if (gaitActive) {
     if (currentGaitScale < 1.0f) {
-      currentGaitScale = min(1.0f, currentGaitScale + 0.035f);
+      currentGaitScale = min(1.0f, currentGaitScale + 0.025f);
     }
     walkTime += dt;
   } else {
     if (currentGaitScale > 0.0f) {
-      currentGaitScale = max(0.0f, currentGaitScale - 0.05f);
+      currentGaitScale = max(0.0f, currentGaitScale - 0.04f);
       walkTime += dt;
     } else {
       return; // Fully parked at neutral, zero unnecessary computation
@@ -67,18 +83,19 @@ void updateLocomotion(float dt) {
   if (phase < 0.0f) phase += 2.0f * (float)M_PI;
 
   float sinP = sin(phase);
-  float cosP = cos(phase);
 
-  // 1. Harmonic Hip Swing & Active Stance Propulsion
-  float hipSwingAmp    = 7.0f * (stepLength / 1.6f) * currentGaitScale;
-  float hipForwardBias = 3.0f * currentGaitScale; // Prevents rear pelvis collision
+  // 1. Pure Harmonic Sine Stride (Starts from EXACT 0.0° neutral with zero initial kick)
+  float hipSwingAmp = 5.5f * (stepLength / 1.6f) * currentGaitScale;
 
-  float strideR = -cosP * hipSwingAmp + hipForwardBias;
-  float strideL =  cosP * hipSwingAmp + hipForwardBias;
+  // Symmetrical forward swing & stance propulsion:
+  // Phase 0..PI: Right leg swings forward, Left leg drives stance backward
+  // Phase PI..2PI: Left leg swings forward, Right leg drives stance backward
+  float strideR =  sinP * hipSwingAmp;
+  float strideL = -sinP * hipSwingAmp;
 
-  // 2. Smooth Parabolic Knee Lift (zero-velocity soft touchdown)
-  // Capped at 5.0° lift so knee bracket stays safely clear of foot bracket
-  float maxKneeLift = 5.0f * (stepClearance / 1.0f) * currentGaitScale;
+  // 2. Parabolic Knee Lift (Smooth liftoff and zero-velocity soft touchdown)
+  // 4.0° lift: clean clearance, zero knee-foot contact
+  float maxKneeLift = 4.0f * (stepClearance / 1.0f) * currentGaitScale;
   float kneeLiftR = 0.0f;
   float kneeLiftL = 0.0f;
 
@@ -92,24 +109,29 @@ void updateLocomotion(float dt) {
     kneeLiftL = (sinP * sinP) * maxKneeLift;
   }
 
-  // 3. Map to Servos relative to calibrated home angles
-  // Right Leg: CH 0 Hip (94°), CH 1 Knee (8°), CH 12 Foot (94°)
-  float aHipR  = getJoint(0)->homeAngle + strideR;
-  float aKneeR = getJoint(1)->homeAngle + kneeLiftR;
-  float aFootR = getJoint(2)->homeAngle; // Strictly flat 94.0° - ZERO backward hitting into right knee!
+  // 3. Raw target angles
+  float targetHipR  = getJoint(0)->homeAngle + strideR;
+  float targetKneeR = getJoint(1)->homeAngle + kneeLiftR;
+  float targetFootR = getJoint(2)->homeAngle; // Strictly flat 94° neutral
 
-  // Left Leg: CH 4 Hip (94°), CH 8 Knee (94°), CH 15 Foot (94°)
-  float aHipL  = getJoint(3)->homeAngle - strideL;
-  float aKneeL = getJoint(4)->homeAngle - kneeLiftL;
-  float aFootL = getJoint(5)->homeAngle; // Strictly flat 94.0° - ZERO collision with left knee!
+  float targetHipL  = getJoint(3)->homeAngle - strideL;
+  float targetKneeL = getJoint(4)->homeAngle - kneeLiftL;
+  float targetFootL = getJoint(5)->homeAngle; // Strictly flat 94° neutral
 
-  // Send to PCA9685 driver (physical safety clamping handled inside setServoAngle)
-  setServoAngle(0,  aHipR);
-  setServoAngle(1,  aKneeR);
-  setServoAngle(12, aFootR);
-  setServoAngle(4,  aHipL);
-  setServoAngle(8,  aKneeL);
-  setServoAngle(15, aFootL);
+  // 4. Low-Pass Exponential Smoothing Filter (Absorbs high-frequency gear chatter and deadband hunting)
+  const float alpha = 0.40f;
+  filteredHipR  += alpha * (targetHipR  - filteredHipR);
+  filteredKneeR += alpha * (targetKneeR - filteredKneeR);
+  filteredHipL  += alpha * (targetHipL  - filteredHipL);
+  filteredKneeL += alpha * (targetKneeL - filteredKneeL);
+
+  // Send filtered setpoints to PCA9685 driver
+  setServoAngle(0,  filteredHipR);
+  setServoAngle(1,  filteredKneeR);
+  setServoAngle(12, targetFootR);
+  setServoAngle(4,  filteredHipL);
+  setServoAngle(8,  filteredKneeL);
+  setServoAngle(15, targetFootL);
 
   // 4. Real-Time Dynamic Ground Reaction Force Telemetry
   if (currentGaitScale > 0.10f) {

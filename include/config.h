@@ -53,18 +53,18 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 88.0f, 108.0f}, // CH 0: 94° rear stop, forward swing up to 108°
-  {1,  "Right Knee",   8.0f,  8.0f,  14.5f}, // CH 1: 8° straight extension, safe lift to 14.5° (ZERO knee-foot contact!)
+  {0,  "Right Hip",   94.0f, 86.0f, 106.0f}, // CH 0: 94° neutral, swing range 86°-106°
+  {1,  "Right Knee",   8.0f,  8.0f,  14.0f}, // CH 1: 8° straight extension, safe lift to 14.0° (ZERO knee-foot contact!)
   {12, "Right Foot",  94.0f, 93.5f,  94.5f}, // CH 12: strictly flat 94° neutral (ZERO backward collision with knee!)
-  {4,  "Left Hip",    94.0f, 80.0f, 100.0f}, // CH 4: 94° rear stop, forward swing down to 80°
-  {8,  "Left Knee",   94.0f, 87.5f,  94.5f}, // CH 8: 94° straight extension, safe lift to 87.5° (ZERO knee-foot contact!)
+  {4,  "Left Hip",    94.0f, 82.0f, 102.0f}, // CH 4: 94° neutral, swing range 82°-102°
+  {8,  "Left Knee",   94.0f, 88.0f,  94.5f}, // CH 8: 94° straight extension, safe lift to 88.0° (ZERO knee-foot contact!)
   {15, "Left Foot",   94.0f, 93.5f,  94.5f}  // CH 15: strictly flat 94° neutral (ZERO collision with knee!)
 };
 
 // =============================================================================
 // 4. Kinematics & Locomotion Tuning Defaults
 // =============================================================================
-#define DEFAULT_WALK_FREQ_HZ       0.75f  // Walking Cadence frequency
+#define DEFAULT_WALK_FREQ_HZ       0.65f  // Calm, judder-free cadence frequency
 #define DEFAULT_STEP_LENGTH_CM     1.60f  // Cartesian stride scaling
 #define DEFAULT_STEP_CLEARANCE_CM  1.00f  // Cartesian foot ground clearance
 #define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
