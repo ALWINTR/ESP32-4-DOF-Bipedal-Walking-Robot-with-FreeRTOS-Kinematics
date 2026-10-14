@@ -124,14 +124,6 @@ void initWebServer() {
   Serial.printf("  Direct Access Point URL: http://%s\n", WiFi.softAPIP().toString().c_str());
 
   // 3. Register Station Wi-Fi Networks in priority order
-  IPAddress staticIP(192, 168, 0, 150);
-  IPAddress gateway(192, 168, 0, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  IPAddress dns(192, 168, 0, 1);
-
-  // Bind to PC subnet 192.168.0.x
-  WiFi.config(staticIP, gateway, subnet, dns);
-
   for (size_t i = 0; i < NUM_NETWORKS; i++) {
     wifiMulti.addAP(KNOWN_NETWORKS[i].ssid, KNOWN_NETWORKS[i].password);
     Serial.printf("[WiFi] Registered network: %s\n", KNOWN_NETWORKS[i].ssid);
