@@ -96,20 +96,20 @@ IKResult solveIK(float x, float z) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
-  float safeLift = constrain(dKnee, 0.0f, 8.5f);
-  float safeFlex = constrain(dAnkle, -3.5f, 3.5f);
+  float safeLift = constrain(dKnee, 0.0f, 4.5f);
+  float safeFlex = constrain(dAnkle, -4.0f, 4.0f);
 
   if (leg == 'l') {
-    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 80.0f, 106.0f);
-    float aKnee = constrain(getJoint(4)->homeAngle - safeLift, 82.0f, 96.0f);
-    float aFoot = constrain(getJoint(5)->homeAngle - safeFlex, 88.0f, 100.0f);
+    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 85.0f, 103.0f);
+    float aKnee = constrain(getJoint(4)->homeAngle - safeLift, 88.5f, 94.0f);
+    float aFoot = constrain(getJoint(5)->homeAngle - safeFlex, 89.0f, 99.0f);
     setServoAngle(4,  aHip);
     setServoAngle(8,  aKnee);
     setServoAngle(15, aFoot);
   } else if (leg == 'r') {
-    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 82.0f, 108.0f);
-    float aKnee = constrain(getJoint(1)->homeAngle + safeLift, 8.0f, 17.5f);
-    float aFoot = constrain(getJoint(2)->homeAngle + safeFlex, 88.0f, 100.0f);
+    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 85.0f, 103.0f);
+    float aKnee = constrain(getJoint(1)->homeAngle + safeLift, 8.0f, 13.5f);
+    float aFoot = constrain(getJoint(2)->homeAngle + safeFlex, 89.0f, 99.0f);
     setServoAngle(0,  aHip);
     setServoAngle(1,  aKnee);
     setServoAngle(12, aFoot);
@@ -129,7 +129,7 @@ void pos(float x, float z, char leg) {
 
 void takeStep(float sLength, int stepVelocity) {
   int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
-  float sClear = min(0.65f, stepClearance);
+  float sClear = min(0.45f, stepClearance);
 
   // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L, lifted)
   for (float i = sLength; i >= -sLength; i -= 0.12f) {
@@ -273,20 +273,63 @@ void updateLocomotion(float dt) {
   float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
 
   // Target Joint Setpoints (ALL 6 JOINTS KINEMATICALLY COUPLED & COLLISION-PROOF):
-  // -------------------------------------------------------------------------------
-  // Both Knees: safe 8.5° lift max (Right Knee [8.0°, 16.5°], Left Knee [85.5°, 94.0°])
-  // Both Feet:  safe +/- 3.5° flex (Right Foot [90.5°, 97.5°], Left Foot [90.5°, 97.5°])
-  // Result: ZERO knee-foot collision on either leg with ample 4mm ground clearance!
-  float kneeLiftR   = constrain(dKneeR, 0.0f, 8.5f);
-  float kneeLiftL   = constrain(dKneeL, 0.0f, 8.5f);
+  // 1. Hips: Strides smoothly through safe 86° - 102° arc
+  float targetHipR = constrain(getJoint(0)->homeAngle + dHipR, 86.0f, 102.0f);
+  float targetHipL = constrain(getJoint(3)->homeAngle - dHipL, 86.0f, 102.0f);
 
-  float targetHipR  = constrain(getJoint(0)->homeAngle + dHipR, 82.0f, 108.0f);
-  float targetKneeR = getJoint(1)->homeAngle + kneeLiftR;
-  float targetFootR = constrain(getJoint(2)->homeAngle + constrain(dAnkleR, -3.5f, 3.5f), 88.0f, 100.0f);
+  // 2. Knees: locked straight during stance, smooth 4.5° lift during swing
+  // (Provides clean 4.5mm ground clearance with ZERO foot contact!)
+  float maxKneeLift = 4.5f * currentGaitScale;
+  float targetKneeR = getJoint(1)->homeAngle; // 8.0°
+  float targetKneeL = getJoint(4)->homeAngle; // 94.0°
 
-  float targetHipL  = constrain(getJoint(3)->homeAngle - dHipL, 80.0f, 106.0f);
-  float targetKneeL = getJoint(4)->homeAngle - kneeLiftL;
-  float targetFootL = constrain(getJoint(5)->homeAngle - constrain(dAnkleL, -3.5f, 3.5f), 88.0f, 100.0f);
+  if (activeGaitName == "crouch" || activeGaitName == "squat") {
+    float squatLift = (0.5f - 0.5f * cosP) * 4.0f * currentGaitScale;
+    targetKneeR += squatLift;
+    targetKneeL -= squatLift;
+  } else {
+    if (sinP < 0.0f) {
+      // Right Leg in Swing: lifts smoothly
+      targetKneeR += (-sinP) * maxKneeLift;
+    } else {
+      // Left Leg in Swing: lifts smoothly
+      targetKneeL -= sinP * maxKneeLift;
+    }
+  }
+  targetKneeR = constrain(targetKneeR, 8.0f, 13.5f);
+  targetKneeL = constrain(targetKneeL, 88.5f, 94.0f);
+
+  // 3. Feet: Active Ground-Tracking in Stance, Neutral Anti-Collision in Swing
+  // In stance: foot actively tilts with hip angle to keep the sole completely flat against the floor.
+  // In swing: foot blends smoothly into neutral 94.0° so the heel NEVER tilts towards the knee!
+  float targetFootR;
+  float targetFootL;
+
+  if (activeGaitName == "crouch" || activeGaitName == "squat") {
+    targetFootR = getJoint(2)->homeAngle;
+    targetFootL = getJoint(5)->homeAngle;
+  } else {
+    // Right Leg
+    float stanceFootR = getJoint(2)->homeAngle + (dHipR * 0.70f);
+    if (sinP >= 0.0f) {
+      targetFootR = stanceFootR;
+    } else {
+      float uR = (-sinP); // 0 -> 1 -> 0
+      targetFootR = (1.0f - uR) * stanceFootR + uR * getJoint(2)->homeAngle;
+    }
+
+    // Left Leg
+    float stanceFootL = getJoint(5)->homeAngle - (dHipL * 0.70f);
+    if (sinP < 0.0f) {
+      targetFootL = stanceFootL;
+    } else {
+      float uL = sinP; // 0 -> 1 -> 0
+      targetFootL = (1.0f - uL) * stanceFootL + uL * getJoint(5)->homeAngle;
+    }
+  }
+
+  targetFootR = constrain(targetFootR, 89.0f, 99.0f);
+  targetFootL = constrain(targetFootL, 89.0f, 99.0f);
 
   // Low-Pass Exponential Smoothing Filter across all 6 joints
   const float alpha = 0.35f;
@@ -352,29 +395,29 @@ void runJointDiagnostics() {
   parkNeutralStand();
   delay(300);
 
-  // Right Hip (CH 0): 94° -> 105° -> 94° (Forward swing)
-  setServoAngle(0, 105.0f); delay(800);
+  // Right Hip (CH 0): 94° -> 101° -> 94° (Forward swing)
+  setServoAngle(0, 101.0f); delay(800);
   setServoAngle(0, 94.0f);   delay(400);
 
-  // Right Knee (CH 1): 8° -> 20.0° -> 8° (Full swing ground clearance)
-  setServoAngle(1, 20.0f); delay(800);
+  // Right Knee (CH 1): 8° -> 12.5° -> 8° (Safe swing ground clearance)
+  setServoAngle(1, 12.5f); delay(800);
   setServoAngle(1, 8.0f);  delay(400);
 
-  // Right Foot (CH 12): 94° -> 100.0° -> 94° (Active foot leveling & clearance flex)
-  setServoAngle(12, 100.0f); delay(800);
-  setServoAngle(12, 94.0f);  delay(400);
+  // Right Foot (CH 12): 94° -> 97.0° -> 94° (Active foot leveling & clearance flex)
+  setServoAngle(12, 97.0f); delay(800);
+  setServoAngle(12, 94.0f); delay(400);
 
-  // Left Hip (CH 4): 94° -> 83° -> 94° (Forward swing)
-  setServoAngle(4, 83.0f); delay(800);
+  // Left Hip (CH 4): 94° -> 87° -> 94° (Forward swing)
+  setServoAngle(4, 87.0f); delay(800);
   setServoAngle(4, 94.0f); delay(400);
 
-  // Left Knee (CH 8): 94° -> 82.0° -> 94° (Full swing ground clearance)
-  setServoAngle(8, 82.0f); delay(800);
+  // Left Knee (CH 8): 94° -> 89.5° -> 94° (Safe swing ground clearance)
+  setServoAngle(8, 89.5f); delay(800);
   setServoAngle(8, 94.0f); delay(400);
 
-  // Left Foot (CH 15): 94° -> 100.0° -> 94° (Active foot leveling & clearance flex)
-  setServoAngle(15, 100.0f); delay(800);
-  setServoAngle(15, 94.0f);  delay(400);
+  // Left Foot (CH 15): 94° -> 97.0° -> 94° (Active foot leveling & clearance flex)
+  setServoAngle(15, 97.0f); delay(800);
+  setServoAngle(15, 94.0f); delay(400);
 
   parkNeutralStand();
 }
