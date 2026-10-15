@@ -86,21 +86,22 @@ static inline float calculateSwingClearance(float stepPhase, float sClear) {
   return sClear * (s * s); // Soft zero-impact bell curve
 }
 
-void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
-  // Knee angle change == Hip angle change during swing (dKnee == dHip)
-  float kneeLift = constrain(fabs(dHip), 0.0f, 8.5f);
+void updateServoPos(float dHip, float dKnee, float dAnkle, char leg, bool isSwing) {
+  // Knee angle change == Hip angle change ONLY during swing!
+  // In stance (isSwing == false), knee stays strictly straight (lift = 0) to support robot!
+  float kneeLift = isSwing ? constrain(fabs(dHip), 0.0f, 8.5f) : 0.0f;
 
   if (leg == 'l') {
     // 1. Primary motion: Hip angle changes with stride
     setServoAngle(4,  constrain(getJoint(3)->homeAngle - dHip,     85.0f, 103.0f));
-    // 2. Knee angle change equals hip angle change
+    // 2. Knee angle change equals hip angle change ONLY in swing, straight in stance
     setServoAngle(8,  constrain(getJoint(4)->homeAngle - kneeLift, 85.5f,  94.0f));
     // 3. Foot: Strictly CONSTANT at default angle (94.0°) - ZERO change!
     setServoAngle(15, getJoint(5)->homeAngle);
   } else if (leg == 'r') {
     // 1. Primary motion: Hip angle changes with stride
     setServoAngle(0,  constrain(getJoint(0)->homeAngle + dHip,     85.0f, 103.0f));
-    // 2. Knee angle change equals hip angle change
+    // 2. Knee angle change equals hip angle change ONLY in swing, straight in stance
     setServoAngle(1,  constrain(getJoint(1)->homeAngle + kneeLift,  8.0f,  16.5f));
     // 3. Foot: Strictly CONSTANT at default angle (94.0°) - ZERO change!
     setServoAngle(12, getJoint(2)->homeAngle);
@@ -114,8 +115,9 @@ void pos(float x, float z, char leg) {
   float dHip   = ik.hipDeg - nom.hipDeg;
   float dKnee  = ik.kneeDeg - nom.kneeDeg;
   float dAnkle = ik.ankleDeg - nom.ankleDeg;
+  bool isSwing = (z < stepHeight - 0.03f);
 
-  updateServoPos(dHip, dKnee, dAnkle, leg);
+  updateServoPos(dHip, dKnee, dAnkle, leg, isSwing);
 }
 
 void updateAllJoints(float xr, float zr, float xl, float zl) {
@@ -126,20 +128,30 @@ void updateAllJoints(float xr, float zr, float xl, float zl) {
   float dHipR = ikR.hipDeg - nom.hipDeg;
   float dHipL = ikL.hipDeg - nom.hipDeg;
 
-  // Knee angle change == Hip angle change during swing (dKnee == dHip)
-  // When hip strides forward, knee bends equally to lift foot and move robot!
-  // In stance, knee stays straight at home extension.
-  bool inSwingR = (zr < stepHeight - 0.05f) || (xr > 0.05f && zr <= stepHeight);
-  bool inSwingL = (zl < stepHeight - 0.05f) || (xl > 0.05f && zl <= stepHeight);
+  // STRICT ALTERNATING SWING: ONLY ONE KNEE BENDS AT A TIME!
+  // A leg is in swing ONLY when lifted off the ground (z < stepHeight - 0.03cm).
+  // The stance leg knee is 100% straight and locked to support robot weight.
+  // Both knees NEVER bend at the same time during walking!
+  bool isSwingR = (zr < stepHeight - 0.03f);
+  bool isSwingL = (zl < stepHeight - 0.03f);
 
-  float kneeLiftR = inSwingR ? constrain(fabs(dHipR), 0.0f, 8.5f) : 0.0f;
-  float kneeLiftL = inSwingL ? constrain(fabs(dHipL), 0.0f, 8.5f) : 0.0f;
+  float kneeLiftR = 0.0f;
+  float kneeLiftL = 0.0f;
+
+  if (activeGaitName == "crouch" || activeGaitName == "squat") {
+    float squat = constrain(nom.kneeDeg - ikR.kneeDeg, 0.0f, 8.5f);
+    kneeLiftR = squat;
+    kneeLiftL = squat;
+  } else {
+    kneeLiftR = isSwingR ? constrain(fabs(dHipR), 0.0f, 8.5f) : 0.0f;
+    kneeLiftL = isSwingL ? constrain(fabs(dHipL), 0.0f, 8.5f) : 0.0f;
+  }
 
   // 1. FIRST: Both Hips (Stride motion)
   setServoAngle(0, constrain(getJoint(0)->homeAngle + dHipR, 85.0f, 103.0f));
   setServoAngle(4, constrain(getJoint(3)->homeAngle - dHipL, 85.0f, 103.0f));
 
-  // 2. SECOND: Both Knees (Knee angle change == Hip angle change)
+  // 2. SECOND: Both Knees (Strictly alternating: only swing knee bends, stance knee straight)
   setServoAngle(1, constrain(getJoint(1)->homeAngle + kneeLiftR, 8.0f,  16.5f));
   setServoAngle(8, constrain(getJoint(4)->homeAngle - kneeLiftL, 85.5f, 94.0f));
 
