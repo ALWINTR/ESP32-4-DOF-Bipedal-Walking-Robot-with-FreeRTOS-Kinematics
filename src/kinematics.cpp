@@ -75,6 +75,17 @@ IKResult solveIK(float x, float z) {
   return res;
 }
 
+// Zero-Impact Double-Support Swing Lift (Soft parabolic liftoff & touchdown)
+static inline float calculateSwingClearance(float stepPhase, float sClear) {
+  const float ds = 0.15f * (float)M_PI; // 15% double support buffer on each transition (30% total)
+  if (stepPhase < ds || stepPhase > ((float)M_PI - ds)) {
+    return 0.0f; // Firm double-support ground contact
+  }
+  float u = (stepPhase - ds) / ((float)M_PI - 2.0f * ds);
+  float s = sin(u * (float)M_PI);
+  return sClear * (s * s); // Soft zero-impact bell curve
+}
+
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
   // Safe Knee Lift: capped to 3.5 deg so knee bracket never hits foot bracket
   float safeLift = constrain(dKnee * 0.40f, 0.0f, 3.5f);
@@ -82,19 +93,19 @@ void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
   if (leg == 'l') {
     // Left Leg:
     // Swing (safeLift > 0.2 deg): foot strictly locks to neutral 94 deg so heel never hits knee!
-    // Stance (safeLift <= 0.2 deg): foot flexes +/- 2.5 deg with ground so foot stays flat
-    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.50f, -2.5f, 2.5f);
+    // Stance (safeLift <= 0.2 deg): foot flexes to match ground reaction so foot sole stays completely flat
+    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.80f, -3.0f, 3.0f);
 
     setServoAngle(4,  constrain(getJoint(3)->homeAngle - dHip,     85.0f, 103.0f));
     setServoAngle(8,  constrain(getJoint(4)->homeAngle - safeLift, 89.5f,  94.0f));
-    setServoAngle(15, constrain(getJoint(5)->homeAngle - safeFlex, 91.5f,  96.5f));
+    setServoAngle(15, constrain(getJoint(5)->homeAngle - safeFlex, 91.0f,  97.0f));
   } else if (leg == 'r') {
     // Right Leg:
-    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.50f, -2.5f, 2.5f);
+    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.80f, -3.0f, 3.0f);
 
     setServoAngle(0,  constrain(getJoint(0)->homeAngle + dHip,     85.0f, 103.0f));
     setServoAngle(1,  constrain(getJoint(1)->homeAngle + safeLift,  8.0f,  12.5f));
-    setServoAngle(12, constrain(getJoint(2)->homeAngle + safeFlex, 91.5f,  96.5f));
+    setServoAngle(12, constrain(getJoint(2)->homeAngle + safeFlex, 91.0f,  97.0f));
   }
 }
 
@@ -113,22 +124,26 @@ void takeStep(float sLength, int stepVelocity) {
   int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
   float sClear = min(0.35f, stepClearance);
 
-  // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L, lifted)
-  for (float i = sLength; i >= -sLength; i -= 0.12f) {
+  // Phase 1: Right Leg stance (x: +L -> -L), Left Leg swing (x: -L -> +L, soft parabolic arch)
+  for (float i = sLength; i >= -sLength; i -= 0.10f) {
+    float u = (sLength - i) / (2.0f * sLength); // 0.0 to 1.0
+    float lift = sClear * sin(u * (float)M_PI);
     pos(i, stepHeight, 'r');
-    pos(-i, stepHeight - sClear, 'l');
+    pos(-i, stepHeight - lift, 'l');
     delay(delayMs);
   }
 
-  // Phase 2: Right Leg swing (x: -L -> +L, lifted), Left Leg stance (x: +L -> -L)
-  for (float i = sLength; i >= -sLength; i -= 0.12f) {
-    pos(-i, stepHeight - sClear, 'r');
+  // Phase 2: Right Leg swing (x: -L -> +L, soft parabolic arch), Left Leg stance (x: +L -> -L)
+  for (float i = sLength; i >= -sLength; i -= 0.10f) {
+    float u = (sLength - i) / (2.0f * sLength); // 0.0 to 1.0
+    float lift = sClear * sin(u * (float)M_PI);
+    pos(-i, stepHeight - lift, 'r');
     pos(i, stepHeight, 'l');
     delay(delayMs);
   }
 
   // Smooth settle back to neutral stand (x: 0, z: stepHeight)
-  for (float i = sLength; i >= 0.0f; i -= 0.12f) {
+  for (float i = sLength; i >= 0.0f; i -= 0.10f) {
     pos(i, stepHeight, 'r');
     pos(-i, stepHeight, 'l');
     delay(delayMs);
@@ -177,50 +192,34 @@ void updateLocomotion(float dt) {
   float zr = sHeight;
   float zl = sHeight;
 
+  // Zero-impact swing clearance profiles with double-support weight transfer
+  float liftL = (phase < (float)M_PI) ? calculateSwingClearance(phase, sClear) : 0.0f;
+  float liftR = (phase >= (float)M_PI) ? calculateSwingClearance(phase - (float)M_PI, sClear) : 0.0f;
+
   if (activeGaitName == "backward" || activeGaitName == "back") {
     // Reverse Stride Walk
     xr = -cosP * sLength;
     xl =  cosP * sLength;
-    if (sinP >= 0.0f) {
-      zr = sHeight;
-      zl = sHeight - sinP * sClear;
-    } else {
-      zr = sHeight - (-sinP) * sClear;
-      zl = sHeight;
-    }
+    zr = sHeight - liftR;
+    zl = sHeight - liftL;
   } else if (activeGaitName == "march") {
     // In-Place Dynamic Stepping (high knee lifts, zero forward drift)
     xr = 0.0f;
     xl = 0.0f;
-    if (sinP >= 0.0f) {
-      zr = sHeight;
-      zl = sHeight - sinP * sClear * 1.2f;
-    } else {
-      zr = sHeight - (-sinP) * sClear * 1.2f;
-      zl = sHeight;
-    }
+    zr = sHeight - liftR * 1.2f;
+    zl = sHeight - liftL * 1.2f;
   } else if (activeGaitName == "turn_left" || activeGaitName == "left") {
     // Differential Turn Left
     xr =  cosP * sLength;
-    xl =  cosP * (sLength * 0.4f);
-    if (sinP >= 0.0f) {
-      zr = sHeight;
-      zl = sHeight - sinP * sClear;
-    } else {
-      zr = sHeight - (-sinP) * sClear;
-      zl = sHeight;
-    }
+    xl =  cosP * (sLength * 0.35f);
+    zr = sHeight - liftR;
+    zl = sHeight - liftL;
   } else if (activeGaitName == "turn_right" || activeGaitName == "right") {
     // Differential Turn Right
-    xr = -cosP * (sLength * 0.4f);
+    xr = -cosP * (sLength * 0.35f);
     xl = -cosP * sLength;
-    if (sinP >= 0.0f) {
-      zr = sHeight;
-      zl = sHeight - sinP * sClear;
-    } else {
-      zr = sHeight - (-sinP) * sClear;
-      zl = sHeight;
-    }
+    zr = sHeight - liftR;
+    zl = sHeight - liftL;
   } else if (activeGaitName == "crouch" || activeGaitName == "squat") {
     // Symmetrical Squat / Crouch & Rise
     xr = 0.0f;
@@ -232,13 +231,8 @@ void updateLocomotion(float dt) {
     // Default Dynamic Forward Walk ("walk", "forward", etc.)
     xr =  cosP * sLength;
     xl = -cosP * sLength;
-    if (sinP >= 0.0f) {
-      zr = sHeight;
-      zl = sHeight - sinP * sClear;
-    } else {
-      zr = sHeight - (-sinP) * sClear;
-      zl = sHeight;
-    }
+    zr = sHeight - liftR;
+    zl = sHeight - liftL;
   }
 
   // Direct Inverse Kinematics execution via unified pos(x, z, leg)
@@ -247,18 +241,18 @@ void updateLocomotion(float dt) {
 
   // Real-Time Dynamic Ground Reaction Force Telemetry
   if (currentGaitScale > 0.10f) {
-    if (sinP > 0.10f) {
-      weightRight = max(0.0f, 250.0f * (1.0f - sinP));
-      weightLeft  = min(600.0f, (ROBOT_TOTAL_WEIGHT_GRAMS - weightRight) * (1.0f + 0.12f * sinP));
-      contactState = (sinP > 0.35f) ? "LEFT SINGLE SUPPORT" : "WEIGHT TRANSFER";
-    } else if (sinP < -0.10f) {
-      weightLeft   = max(0.0f, 250.0f * (1.0f - (-sinP)));
-      weightRight  = min(600.0f, (ROBOT_TOTAL_WEIGHT_GRAMS - weightLeft) * (1.0f + 0.12f * (-sinP)));
-      contactState = (-sinP > 0.35f) ? "RIGHT SINGLE SUPPORT" : "WEIGHT TRANSFER";
+    if (liftL > 0.05f) {
+      weightRight = min(500.0f, ROBOT_TOTAL_WEIGHT_GRAMS * (0.85f + 0.15f * (liftL / sClear)));
+      weightLeft  = max(0.0f, ROBOT_TOTAL_WEIGHT_GRAMS - weightRight);
+      contactState = "RIGHT SINGLE SUPPORT";
+    } else if (liftR > 0.05f) {
+      weightLeft  = min(500.0f, ROBOT_TOTAL_WEIGHT_GRAMS * (0.85f + 0.15f * (liftR / sClear)));
+      weightRight = max(0.0f, ROBOT_TOTAL_WEIGHT_GRAMS - weightLeft);
+      contactState = "LEFT SINGLE SUPPORT";
     } else {
       weightLeft   = 250.0f;
       weightRight  = 250.0f;
-      contactState = "DUAL STANCE";
+      contactState = "DOUBLE SUPPORT";
     }
   } else {
     weightLeft   = 250.0f;

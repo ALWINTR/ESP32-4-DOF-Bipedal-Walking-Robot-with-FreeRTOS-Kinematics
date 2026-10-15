@@ -68,8 +68,8 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 #define LINK_THIGH_L1_CM           5.00f  // Thigh length l1
 #define LINK_SHIN_L2_CM            5.70f  // Shin length l2
 
-#define DEFAULT_WALK_FREQ_HZ       0.55f  // Stable, judder-free cadence frequency
-#define DEFAULT_STEP_LENGTH_CM     1.00f  // Natural Cartesian stride
+#define DEFAULT_WALK_FREQ_HZ       0.60f  // Stable, judder-free cadence frequency
+#define DEFAULT_STEP_LENGTH_CM     0.85f  // Stable Cartesian stride (keeps CoM within support polygon)
 #define DEFAULT_STEP_CLEARANCE_CM  0.35f  // Safe ground clearance lift (maintains wide knee-foot gap)
 #define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
 
