@@ -92,20 +92,20 @@ void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
 
   if (leg == 'l') {
     // Left Leg:
-    // Swing (safeLift > 0.2 deg): foot strictly locks to neutral 94 deg so heel never hits knee!
-    // Stance (safeLift <= 0.2 deg): foot flexes to match ground reaction so foot sole stays completely flat
-    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.80f, -3.0f, 3.0f);
-
+    // 1. First: Hip
     setServoAngle(4,  constrain(getJoint(3)->homeAngle - dHip,     85.0f, 103.0f));
+    // 2. Second: Knee
     setServoAngle(8,  constrain(getJoint(4)->homeAngle - safeLift, 89.5f,  94.0f));
-    setServoAngle(15, constrain(getJoint(5)->homeAngle - safeFlex, 91.0f,  97.0f));
+    // 3. Last: Foot strictly CONSTANT at default angle (94.0°) - ZERO angle change!
+    setServoAngle(15, getJoint(5)->homeAngle);
   } else if (leg == 'r') {
     // Right Leg:
-    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.80f, -3.0f, 3.0f);
-
+    // 1. First: Hip
     setServoAngle(0,  constrain(getJoint(0)->homeAngle + dHip,     85.0f, 103.0f));
+    // 2. Second: Knee
     setServoAngle(1,  constrain(getJoint(1)->homeAngle + safeLift,  8.0f,  12.5f));
-    setServoAngle(12, constrain(getJoint(2)->homeAngle + safeFlex, 91.0f,  97.0f));
+    // 3. Last: Foot strictly CONSTANT at default angle (94.0°) - ZERO angle change!
+    setServoAngle(12, getJoint(2)->homeAngle);
   }
 }
 
@@ -127,17 +127,12 @@ void updateAllJoints(float xr, float zr, float xl, float zl) {
 
   float dHipR   = ikR.hipDeg - nom.hipDeg;
   float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
-  float dAnkleR = ikR.ankleDeg - nom.ankleDeg;
 
   float dHipL   = ikL.hipDeg - nom.hipDeg;
   float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
-  float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
 
   float safeLiftR = constrain(dKneeR * 0.40f, 0.0f, 3.5f);
   float safeLiftL = constrain(dKneeL * 0.40f, 0.0f, 3.5f);
-
-  float safeFlexR = (safeLiftR > 0.2f) ? 0.0f : constrain(dAnkleR * 0.80f, -3.0f, 3.0f);
-  float safeFlexL = (safeLiftL > 0.2f) ? 0.0f : constrain(dAnkleL * 0.80f, -3.0f, 3.0f);
 
   // 1. FIRST: Both Hips (Right Hip CH 0, Left Hip CH 4)
   setServoAngle(0, constrain(getJoint(0)->homeAngle + dHipR, 85.0f, 103.0f));
@@ -147,9 +142,9 @@ void updateAllJoints(float xr, float zr, float xl, float zl) {
   setServoAngle(1, constrain(getJoint(1)->homeAngle + safeLiftR, 8.0f, 12.5f));
   setServoAngle(8, constrain(getJoint(4)->homeAngle - safeLiftL, 89.5f, 94.0f));
 
-  // 3. LAST: Both Feet (Right Foot CH 12, Left Foot CH 15)
-  setServoAngle(12, constrain(getJoint(2)->homeAngle + safeFlexR, 91.0f, 97.0f));
-  setServoAngle(15, constrain(getJoint(5)->homeAngle - safeFlexL, 91.0f, 97.0f));
+  // 3. LAST: Both Feet are strictly CONSTANT (94.0°) - ZERO angle change!
+  setServoAngle(12, getJoint(2)->homeAngle); // Exactly 94.0° constant
+  setServoAngle(15, getJoint(5)->homeAngle); // Exactly 94.0° constant
 }
 
 void takeStep(float sLength, int stepVelocity) {
@@ -320,9 +315,6 @@ void runJointDiagnostics() {
   setServoAngle(1, 10.5f); delay(800);
   setServoAngle(1, 8.0f);  delay(400);
 
-  // Right Foot (CH 12): 94° -> 95.5° -> 94° (Active foot leveling)
-  setServoAngle(12, 95.5f); delay(800);
-  setServoAngle(12, 94.0f); delay(400);
 
   // Left Hip (CH 4): 94° -> 90° -> 94° (Forward swing)
   setServoAngle(4, 90.0f); delay(800);
@@ -332,9 +324,9 @@ void runJointDiagnostics() {
   setServoAngle(8, 91.5f); delay(800);
   setServoAngle(8, 94.0f); delay(400);
 
-  // Left Foot (CH 15): 94° -> 95.5° -> 94° (Active foot leveling)
-  setServoAngle(15, 95.5f); delay(800);
-  setServoAngle(15, 94.0f); delay(400);
+  // Feet stay strictly constant at 94.0°
+  setServoAngle(12, 94.0f);
+  setServoAngle(15, 94.0f);
 
   parkNeutralStand();
 }
