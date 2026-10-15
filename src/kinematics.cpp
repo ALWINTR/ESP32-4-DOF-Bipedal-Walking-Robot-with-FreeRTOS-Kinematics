@@ -120,6 +120,38 @@ void pos(float x, float z, char leg) {
   updateServoPos(dHip, dKnee, dAnkle, leg);
 }
 
+void updateAllJoints(float xr, float zr, float xl, float zl) {
+  IKResult ikR = solveIK(xr, zr);
+  IKResult ikL = solveIK(xl, zl);
+  IKResult nom = solveIK(0.0f, stepHeight);
+
+  float dHipR   = ikR.hipDeg - nom.hipDeg;
+  float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
+  float dAnkleR = ikR.ankleDeg - nom.ankleDeg;
+
+  float dHipL   = ikL.hipDeg - nom.hipDeg;
+  float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
+  float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
+
+  float safeLiftR = constrain(dKneeR * 0.40f, 0.0f, 3.5f);
+  float safeLiftL = constrain(dKneeL * 0.40f, 0.0f, 3.5f);
+
+  float safeFlexR = (safeLiftR > 0.2f) ? 0.0f : constrain(dAnkleR * 0.80f, -3.0f, 3.0f);
+  float safeFlexL = (safeLiftL > 0.2f) ? 0.0f : constrain(dAnkleL * 0.80f, -3.0f, 3.0f);
+
+  // 1. FIRST: Both Hips (Right Hip CH 0, Left Hip CH 4)
+  setServoAngle(0, constrain(getJoint(0)->homeAngle + dHipR, 85.0f, 103.0f));
+  setServoAngle(4, constrain(getJoint(3)->homeAngle - dHipL, 85.0f, 103.0f));
+
+  // 2. SECOND: Both Knees (Right Knee CH 1, Left Knee CH 8)
+  setServoAngle(1, constrain(getJoint(1)->homeAngle + safeLiftR, 8.0f, 12.5f));
+  setServoAngle(8, constrain(getJoint(4)->homeAngle - safeLiftL, 89.5f, 94.0f));
+
+  // 3. LAST: Both Feet (Right Foot CH 12, Left Foot CH 15)
+  setServoAngle(12, constrain(getJoint(2)->homeAngle + safeFlexR, 91.0f, 97.0f));
+  setServoAngle(15, constrain(getJoint(5)->homeAngle - safeFlexL, 91.0f, 97.0f));
+}
+
 void takeStep(float sLength, int stepVelocity) {
   int delayMs = (stepVelocity > 0) ? stepVelocity : 20;
   float sClear = min(0.35f, stepClearance);
@@ -128,8 +160,7 @@ void takeStep(float sLength, int stepVelocity) {
   for (float i = sLength; i >= -sLength; i -= 0.10f) {
     float u = (sLength - i) / (2.0f * sLength); // 0.0 to 1.0
     float lift = sClear * sin(u * (float)M_PI);
-    pos(i, stepHeight, 'r');
-    pos(-i, stepHeight - lift, 'l');
+    updateAllJoints(i, stepHeight, -i, stepHeight - lift);
     delay(delayMs);
   }
 
@@ -137,15 +168,13 @@ void takeStep(float sLength, int stepVelocity) {
   for (float i = sLength; i >= -sLength; i -= 0.10f) {
     float u = (sLength - i) / (2.0f * sLength); // 0.0 to 1.0
     float lift = sClear * sin(u * (float)M_PI);
-    pos(-i, stepHeight - lift, 'r');
-    pos(i, stepHeight, 'l');
+    updateAllJoints(-i, stepHeight - lift, i, stepHeight);
     delay(delayMs);
   }
 
   // Smooth settle back to neutral stand (x: 0, z: stepHeight)
   for (float i = sLength; i >= 0.0f; i -= 0.10f) {
-    pos(i, stepHeight, 'r');
-    pos(-i, stepHeight, 'l');
+    updateAllJoints(i, stepHeight, -i, stepHeight);
     delay(delayMs);
   }
   parkNeutralStand();
@@ -153,8 +182,7 @@ void takeStep(float sLength, int stepVelocity) {
 
 void initialize() {
   for (float i = 10.7f; i >= stepHeight; i -= 0.05f) {
-    pos(0.0f, i, 'l');
-    pos(0.0f, i, 'r');
+    updateAllJoints(0.0f, i, 0.0f, i);
     delay(15);
   }
   parkNeutralStand();
@@ -235,9 +263,8 @@ void updateLocomotion(float dt) {
     zl = sHeight - liftL;
   }
 
-  // Direct Inverse Kinematics execution via unified pos(x, z, leg)
-  pos(xr, zr, 'r');
-  pos(xl, zl, 'l');
+  // Direct Kinematics execution: FIRST Hips, SECOND Knees, LAST Feet
+  updateAllJoints(xr, zr, xl, zl);
 
   // Real-Time Dynamic Ground Reaction Force Telemetry
   if (currentGaitScale > 0.10f) {

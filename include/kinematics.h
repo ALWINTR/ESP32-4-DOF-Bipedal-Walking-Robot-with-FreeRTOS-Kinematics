@@ -39,6 +39,7 @@ struct IKResult {
 IKResult solveIK(float x, float z);
 void pos(float x, float z, char leg);
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg);
+void updateAllJoints(float xr, float zr, float xl, float zl);
 void takeStep(float stepLength, int stepVelocity);
 void initialize();
 
