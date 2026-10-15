@@ -1,111 +1,131 @@
-# 🤖 ESP32 6-DOF Bipedal Walking Robot Controller
+# ESP32 4 DOF Bipedal Walking Robot with FreeRTOS Kinematics
 
-An advanced, WiFi-enabled **6-DOF Humanoid Bipedal Robot Controller** built with **ESP32** and **PCA9685 16-Channel 12-bit PWM Servo Driver**. Featuring continuous zero-lag harmonic locomotion, S-Curve anti-shake weight shifting, soft-touchdown ground landing kinematics, and a real-time web-based calibration & locomotion studio with non-volatile NVS flash persistence.
+<div align="center">
 
----
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-00f0ff?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ALWINTR/ESP32-4-DOF-Bipedal-Walking-Robot-with-FreeRTOS-Kinematics)
+[![Developer](https://img.shields.io/badge/Developer-Alwin_T_R-0284c7?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/alwintr)
+[![Portfolio](https://img.shields.io/badge/Portfolio-alwintr.github.io-00f0ff?style=for-the-badge&logo=googlechrome&logoColor=black)](https://alwintr.github.io)
+[![License](https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge)](LICENSE)
 
-## 🌟 Key Features
+</div>
 
-- **6-DOF Humanoid Kinematics**:
-  - Full lateral weight shifting (Ankle Roll) enabling true mid-air leg swing without ground drag.
-  - S-Curve harmonic trajectory easing ($1.0 - 0.18\cos(2\theta)$) eliminating body jitter.
-  - Parabolic soft-touchdown knee trajectory with zero vertical impact velocity ($v=0$).
-- **Zero-Lag Real-Time Web Studio**:
-  - Embedded modern dark-mode responsive web app hosted directly on ESP32.
-  - Live 6-joint telemetry bars, D-Pad locomotion, and real-time gait tuning sliders.
-  - 400kHz Fast I2C communication reducing PCA9685 servo command latency by 75%.
-- **Multi-Directional Locomotion**:
-  - Forward Walking, Reverse Stepping, Left Pivot Turning, and Right Pivot Turning.
-  - Anti-jerk dynamic startup and stop ramping over 500ms.
-- **Hardware Interference Prevention**:
-  - Strict software bounding and bracket collision prevention algorithms.
-- **Permanent Flash Calibration**:
-  - Save calibrated neutral offsets directly to ESP32 NVS Flash memory (`Preferences`).
+> Four-DOF bipedal walking robot featuring synchronized hip and ankle inverse kinematics, multi-channel 16-bit hardware PWM timers, and real-time serial telemetry running on FreeRTOS Core 1.
 
 ---
 
-## 📐 Hardware Architecture & 38-Pin ESP32 Mapping
+## 📌 Executive Overview
 
-```
-                 +-----------------------------------+
-                 |      ESP32 38-Pin DevKit MCU      |
-                 |  (WiFi AP + Station Web Server)   |
-                 +-----------------+-----------------+
-                                   | I2C (GPIO21 / GPIO22) @ 400kHz
-                 +-----------------v-----------------+
-                 |       PCA9685 16-Ch PWM Driver    |
-                 |             (Address 0x40)        |
-                 +-----------------+-----------------+
-                                   |
-         +-------------------------+-------------------------+
-         |                                                   |
-   [ RIGHT LEG ]                                       [ LEFT LEG ]
-   - CH 0: Right Hip   (Neutral: 94°)                  - CH 4: Left Hip   (Neutral: 94°)
-   - CH 1: Right Knee  (Neutral: 8°)                   - CH 8: Left Knee  (Neutral: 94°)
-   - CH 2: Right Foot  (Neutral: 94°)                  - CH 12: Left Foot (Neutral: 94°)
-```
+Four-DOF bipedal walking robot featuring synchronized hip and ankle inverse kinematics, multi-channel 16-bit hardware PWM timers, and real-time serial telemetry running on FreeRTOS Core 1. Designed and validated on physical hardware, this robotics architecture implements multi-joint forward and inverse kinematics, 16-bit hardware PWM pulse generation, real-time serial telemetry streams, and alternating knee gait phases to maintain dynamic stability and prevent joint strain.
 
-### 38-Pin ESP32 to PCA9685 Wiring
-
-```
-   38-Pin ESP32 DevKit                       PCA9685 16-Ch Driver
-+------------------------+                  +--------------------+
-|                [3V3]   |                  |                    |
-|                [GND] --+----------------->| [GND] (Logic GND)  |
-|                [VIN] --+----------------->| [VCC] (Logic 3.3-5V|
-|                [D21] --+----------------->| [SDA] (I2C Data)   |
-|                [D22] --+----------------->| [SCL] (I2C Clock)  |
-+------------------------+                  +--------------------+
-                                                      |
- External Battery / 5V-6V (3A+) --------------------> | [V+] / [GND] (Servo Power)
-```
-
-| ESP32 38-Pin Header | Label on Board | PCA9685 Pin | Function |
-| :--- | :--- | :--- | :--- |
-| **Right Side (Pin 2)** | `D21` (GPIO 21) | `SDA` | I2C Data (400kHz Fast Mode) |
-| **Left Side (Pin 17)** | `D22` (GPIO 22) | `SCL` | I2C Clock (400kHz Fast Mode) |
-| **Left Side (Pin 1)**  | `3V3` / `VIN`   | `VCC` | Logic Power (3.3V or 5V) |
-| **Left / Right**       | `GND`           | `GND` | Common Ground Reference |
-| **Power Screw Terminal** | *External 5V-6V* | `V+` / `GND` | High-Current Dedicated Servo Rail |
+- **Primary Domain**: Robotics
+- **Microcontroller Core**: ESP32 / FreeRTOS
+- **Kinematics Engine**: Inverse Kinematics (IK) & Synchronized Joint Phase Planning
+- **Live Interactive Specs**: [alwintr.github.io](https://alwintr.github.io)
 
 ---
 
-## 🎛️ Web Dashboard & API Endpoints
+## 📐 System Architecture & Signal Flow
 
-Once connected to your local WiFi or the ESP32 Access Point (`ESP32-Biped-Robot` / `12345678`), open `http://<ESP32_IP>` in any browser.
-
-### REST API Reference
-
-| Endpoint | Method | Parameters | Description |
-| :--- | :--- | :--- | :--- |
-| `/` | `GET` | — | Renders the full 6-DOF Web Calibration Studio |
-| `/get_angles` | `GET` | — | Returns JSON telemetry of all 6 joint angles & gait state |
-| `/set_servo` | `GET` | `ch=<channel>&val=<angle>` | Moves a single joint directly in real time |
-| `/run_gait` | `GET` | `gait=<walk\|backward\|left\|right\|step\|stand>` | Triggers locomotion modes |
-| `/set_gait_param`| `GET` | `param=<length\|clearance\|height\|velocity>&val=<val>` | Dynamically tunes gait parameters in real time |
-| `/save_offsets` | `GET` | — | Persists current angles to ESP32 Flash memory |
-| `/reset_offsets`| `GET` | — | Restores factory neutral joint baselines |
+```
++--------------------------------------------------------------+
+|                ESP32 Dual-Core SoC (240MHz)                  |
+|  [Core 0: Telemetry & Comm]   |   [Core 1: FreeRTOS Gait Task]|
++--------------------------------------------------------------+
+                                |
+                                v Sinusoidal Gait Trajectory Generator
+        +-----------------------+-----------------------+
+        |                       |                       |
+        v                       v                       v
+  [LEDC Channel 0]        [LEDC Channel 1]        [LEDC Channels 2,3]
+        |                       |                       |
+        v                       v                       v
+ [Right Hip MG996R]      [Right Foot MG996R]     [Left Hip & Foot MG996R]
+```
 
 ---
 
-## 🚀 Getting Started & Flashing
+## 📋 Hardware Bill of Materials (BOM)
 
-### Requirements
-- [Arduino IDE](https://www.arduino.cc/en/software) or `arduino-cli`
-- ESP32 Board Package (`esp32:esp32:esp32`)
-- Libraries:
-  - `Adafruit PWMServoDriver`
-  - `Wire`
-  - `WiFi`
-  - `WebServer`
-  - `Preferences`
+| Component Name | Operating Voltage | Interface / Functionality |
+| :--- | :--- | :--- |
+| **ESP32-WROOM-32D** | `3.3V / 5V` | Dual Xtensa 240MHz, FreeRTOS |
+| **4x TowerPro MG996R Servos** | `6.0V / 2.5A peak` | Metal gear, 13 kg-cm torque |
+| **External UBEC 6V / 5A Buck** | `7.4V 2S LiPo -> 6V` | Isolated actuator power |
+| **MPU-6050 6-Axis IMU** | `3.3V I2C` | Real-time posture feedback |
 
-### Flashing via Arduino CLI
+---
+
+## 🔌 Circuit Pinout & Microcontroller Interconnect
+
+| MCU Pin / Channel | Peripheral Pin | Signal Function / Bus |
+| :--- | :--- | :--- |
+| `ESP32 GPIO 18` | `Left Hip Servo PWM` | LEDC Timer 0, Channel 0 |
+| `ESP32 GPIO 19` | `Left Foot Servo PWM` | LEDC Timer 0, Channel 1 |
+| `ESP32 GPIO 22` | `Right Hip Servo PWM` | LEDC Timer 1, Channel 2 |
+| `ESP32 GPIO 23` | `Right Foot Servo PWM` | LEDC Timer 1, Channel 3 |
+| `ESP32 GPIO 21 / 22` | `MPU-6050 SDA / SCL` | I2C Bus at 400kHz |
+
+---
+
+## ⚙️ Firmware Architecture & Locomotion Kinematics
+
+Dual-core FreeRTOS firmware dedicating Core 1 to high-priority sinusoidal inverse kinematics and gait trajectory generation, while Core 0 handles serial telemetry streaming.
+
+### Locomotion & Gait Features:
+- **Strictly Alternating Knee Locomotion**: Knee actuation phases are synchronized to alternate strictly so both knees never flex simultaneously, preserving center-of-mass equilibrium.
+- **Dynamic Hip-Knee Proportional Scaling**: Dynamically maps delta hip trajectory change to knee pitch adjustment (`dKnee == dHip`) while maintaining flat foot alignment.
+- **Dual-Core FreeRTOS Task Distribution**: Core 0 manages high-speed wireless telemetry while Core 1 executes deterministic 16-bit microsecond PWM timing.
+
+---
+
+## 📁 Repository Structure
+
+```
+ESP32-4-DOF-Bipedal-Walking-Robot-with-FreeRTOS-Kinematics/
+├── .gitignore
+├── connect_wifi.ps1
+├── include
+├── LICENSE
+├── platformio.ini
+├── read_serial.ps1
+├── read_serial_live.ps1
+├── src
+├── test_hip_knee.py
+└── README.md
+```
+
+---
+
+## 🚀 Build & Deployment Instructions
+
+### 1. Hardware Power Distribution
+- Supply high-torque digital servos with a dedicated 5V–6V 3A+ BEC power rail.
+- Establish a shared common ground between the external servo power supply and the ESP32 ground pin.
+
+### 2. Compilation & Flashing
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32 --upload -p COM3 esp32-bipedal-robot
+# Clone the repository
+git clone https://github.com/ALWINTR/ESP32-4-DOF-Bipedal-Walking-Robot-with-FreeRTOS-Kinematics.git
+
+# Navigate into directory
+cd ESP32-4-DOF-Bipedal-Walking-Robot-with-FreeRTOS-Kinematics
 ```
+- Open `esp32-bipedal-robot.ino` in **Arduino IDE** or **VS Code with PlatformIO**.
+- Select `ESP32 Dev Module` under Board Manager.
+- Compile and flash to the ESP32 microcontroller over USB-UART.
+
+---
+
+## 👨‍💻 Author
+
+**Alwin T R** — Robotics & Automation Engineer  
+- 💼 **LinkedIn**: [linkedin.com/in/alwintr](https://www.linkedin.com/in/alwintr)  
+- 🌐 **Interactive Portfolio**: [alwintr.github.io](https://alwintr.github.io)  
+- 🐙 **GitHub**: [github.com/ALWINTR](https://github.com/ALWINTR)  
+- ✉️ **Direct Email**: [alwintr2003@gmail.com](mailto:alwintr2003@gmail.com)
 
 ---
 
 ## 📄 License
-This project is open-source and available under the [MIT License](LICENSE).
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
