@@ -17,23 +17,6 @@ static float weightRight      = 250.0f;
 static float groundForceN     = 4.905f;
 static String contactState    = "DUAL STANCE";
 
-// Low-pass EMA filter state for silky-smooth servo tracking across all 6 joints
-static float filteredHipR  = 94.0f;
-static float filteredKneeR =  8.0f;
-static float filteredFootR = 94.0f;
-static float filteredHipL  = 94.0f;
-static float filteredKneeL = 94.0f;
-static float filteredFootL = 94.0f;
-
-static void resetFilters() {
-  JointState* j0 = getJoint(0); if (j0) filteredHipR  = j0->homeAngle;
-  JointState* j1 = getJoint(1); if (j1) filteredKneeR = j1->homeAngle;
-  JointState* j2 = getJoint(2); if (j2) filteredFootR = j2->homeAngle;
-  JointState* j3 = getJoint(3); if (j3) filteredHipL  = j3->homeAngle;
-  JointState* j4 = getJoint(4); if (j4) filteredKneeL = j4->homeAngle;
-  JointState* j5 = getJoint(5); if (j5) filteredFootL = j5->homeAngle;
-}
-
 void initKinematics() {
   currentGaitScale = 0.0f;
   walkTime         = 0.0f;
@@ -43,7 +26,6 @@ void initKinematics() {
   weightRight      = 250.0f;
   groundForceN     = 4.905f;
   contactState     = "DUAL STANCE";
-  resetFilters();
 }
 
 void startLocomotion(const String& gait) {
@@ -51,7 +33,6 @@ void startLocomotion(const String& gait) {
   activeGaitName = gait;
   currentGaitScale = 0.0f; // Smooth ease-in from standing posture
   walkTime = 0.0f;
-  resetFilters();
 }
 
 void stopLocomotion() {
@@ -59,7 +40,6 @@ void stopLocomotion() {
   activeGaitName = "stand";
   currentGaitScale = 0.0f;
   parkNeutralStand();
-  resetFilters();
   weightLeft   = 250.0f;
   weightRight  = 250.0f;
   groundForceN = 4.905f;
@@ -96,23 +76,25 @@ IKResult solveIK(float x, float z) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
+  // Safe Knee Lift: capped to 3.5 deg so knee bracket never hits foot bracket
   float safeLift = constrain(dKnee * 0.40f, 0.0f, 3.5f);
-  float safeFlex = constrain(dAnkle * 0.50f, -3.0f, 3.0f);
 
   if (leg == 'l') {
-    float aHip  = constrain(getJoint(3)->homeAngle - dHip, 85.0f, 103.0f);
-    float aKnee = constrain(getJoint(4)->homeAngle - safeLift, 89.5f, 94.0f);
-    float aFoot = constrain(getJoint(5)->homeAngle - safeFlex, 91.0f, 98.0f);
-    setServoAngle(4,  aHip);
-    setServoAngle(8,  aKnee);
-    setServoAngle(15, aFoot);
+    // Left Leg:
+    // Swing (safeLift > 0.2 deg): foot strictly locks to neutral 94 deg so heel never hits knee!
+    // Stance (safeLift <= 0.2 deg): foot flexes +/- 2.5 deg with ground so foot stays flat
+    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.50f, -2.5f, 2.5f);
+
+    setServoAngle(4,  constrain(getJoint(3)->homeAngle - dHip,     85.0f, 103.0f));
+    setServoAngle(8,  constrain(getJoint(4)->homeAngle - safeLift, 89.5f,  94.0f));
+    setServoAngle(15, constrain(getJoint(5)->homeAngle - safeFlex, 91.5f,  96.5f));
   } else if (leg == 'r') {
-    float aHip  = constrain(getJoint(0)->homeAngle + dHip, 85.0f, 103.0f);
-    float aKnee = constrain(getJoint(1)->homeAngle + safeLift, 8.0f, 12.5f);
-    float aFoot = constrain(getJoint(2)->homeAngle + safeFlex, 91.0f, 98.0f);
-    setServoAngle(0,  aHip);
-    setServoAngle(1,  aKnee);
-    setServoAngle(12, aFoot);
+    // Right Leg:
+    float safeFlex = (safeLift > 0.2f) ? 0.0f : constrain(dAnkle * 0.50f, -2.5f, 2.5f);
+
+    setServoAngle(0,  constrain(getJoint(0)->homeAngle + dHip,     85.0f, 103.0f));
+    setServoAngle(1,  constrain(getJoint(1)->homeAngle + safeLift,  8.0f,  12.5f));
+    setServoAngle(12, constrain(getJoint(2)->homeAngle + safeFlex, 91.5f,  96.5f));
   }
 }
 
@@ -259,95 +241,9 @@ void updateLocomotion(float dt) {
     }
   }
 
-  // Solve Reference Inverse Kinematics for both legs
-  IKResult ikR = solveIK(xr, zr);
-  IKResult ikL = solveIK(xl, zl);
-  IKResult nom = solveIK(0.0f, sHeight);
-
-  float dHipR   = ikR.hipDeg - nom.hipDeg;
-  float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
-  float dAnkleR = ikR.ankleDeg - nom.ankleDeg;
-
-  float dHipL   = ikL.hipDeg - nom.hipDeg;
-  float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
-  float dAnkleL = ikL.ankleDeg - nom.ankleDeg;
-
-  // Target Joint Setpoints (PROPORTIONAL 6-JOINT KINEMATIC COUPLING WITH WIDE KNEE-FOOT AIR GAP):
-  // 1. Hips: Strides smoothly through natural IK arc
-  float targetHipR = constrain(getJoint(0)->homeAngle + dHipR, 85.0f, 103.0f);
-  float targetHipL = constrain(getJoint(3)->homeAngle - dHipL, 85.0f, 103.0f);
-
-  // 2. Knees: locked straight in stance, gentle micro-lift in swing (max 3.5° bend)
-  // Maintains a wide, safe physical gap of > 15mm between knee and foot brackets at all times!
-  float maxKneeLift = 3.5f * currentGaitScale;
-  float targetKneeR = getJoint(1)->homeAngle; // 8.0°
-  float targetKneeL = getJoint(4)->homeAngle; // 94.0°
-
-  if (activeGaitName == "crouch" || activeGaitName == "squat") {
-    float squatLift = (0.5f - 0.5f * cosP) * 3.5f * currentGaitScale;
-    targetKneeR += squatLift;
-    targetKneeL -= squatLift;
-  } else {
-    if (sinP < 0.0f) {
-      // Right Leg in Swing: gentle micro-lift
-      targetKneeR += (-sinP) * maxKneeLift;
-    } else {
-      // Left Leg in Swing: gentle micro-lift
-      targetKneeL -= sinP * maxKneeLift;
-    }
-  }
-  targetKneeR = constrain(targetKneeR, 8.0f, 12.5f);
-  targetKneeL = constrain(targetKneeL, 89.5f, 94.0f);
-
-  // 3. Feet: Active Ground Tracking in Stance, Neutral in Swing
-  // In stance: foot actively tilts with hip and ground reaction to keep sole flat on floor.
-  // In swing: foot blends smoothly into neutral 94.0° so the heel NEVER tilts towards the knee!
-  float targetFootR;
-  float targetFootL;
-
-  if (activeGaitName == "crouch" || activeGaitName == "squat") {
-    targetFootR = getJoint(2)->homeAngle;
-    targetFootL = getJoint(5)->homeAngle;
-  } else {
-    // Right Leg: stance follows dAnkleR (up to +/- 3.0°), swing smoothly stays at neutral 94.0°
-    float stanceFootR = getJoint(2)->homeAngle + constrain(dAnkleR * 0.50f, -3.0f, 3.0f);
-    if (sinP >= 0.0f) {
-      targetFootR = stanceFootR;
-    } else {
-      float uR = (-sinP); // 0 -> 1 -> 0
-      targetFootR = (1.0f - uR) * stanceFootR + uR * getJoint(2)->homeAngle;
-    }
-
-    // Left Leg: stance follows dAnkleL (up to +/- 3.0°), swing smoothly stays at neutral 94.0°
-    float stanceFootL = getJoint(5)->homeAngle - constrain(dAnkleL * 0.50f, -3.0f, 3.0f);
-    if (sinP < 0.0f) {
-      targetFootL = stanceFootL;
-    } else {
-      float uL = sinP; // 0 -> 1 -> 0
-      targetFootL = (1.0f - uL) * stanceFootL + uL * getJoint(5)->homeAngle;
-    }
-  }
-
-  targetFootR = constrain(targetFootR, 91.0f, 98.0f);
-  targetFootL = constrain(targetFootL, 91.0f, 98.0f);
-
-  // Low-Pass Exponential Smoothing Filter across all 6 joints
-  const float alpha = 0.28f;
-  filteredHipR  += alpha * (targetHipR  - filteredHipR);
-  filteredKneeR += alpha * (targetKneeR - filteredKneeR);
-  filteredFootR += alpha * (targetFootR - filteredFootR);
-
-  filteredHipL  += alpha * (targetHipL  - filteredHipL);
-  filteredKneeL += alpha * (targetKneeL - filteredKneeL);
-  filteredFootL += alpha * (targetFootL - filteredFootL);
-
-  // Send filtered setpoints to PCA9685 driver
-  setServoAngle(0,  filteredHipR);
-  setServoAngle(1,  filteredKneeR);
-  setServoAngle(12, filteredFootR);
-  setServoAngle(4,  filteredHipL);
-  setServoAngle(8,  filteredKneeL);
-  setServoAngle(15, filteredFootL);
+  // Direct Inverse Kinematics execution via unified pos(x, z, leg)
+  pos(xr, zr, 'r');
+  pos(xl, zl, 'l');
 
   // Real-Time Dynamic Ground Reaction Force Telemetry
   if (currentGaitScale > 0.10f) {
