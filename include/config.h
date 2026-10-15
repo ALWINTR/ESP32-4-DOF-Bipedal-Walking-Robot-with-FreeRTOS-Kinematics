@@ -53,12 +53,12 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 85.0f, 103.0f}, // CH 0: 94° neutral, safe stride 87°-101°
-  {1,  "Right Knee",   8.0f,  8.0f,  12.5f}, // CH 1: 8° straight extension, safe lift to 11.5° (WIDE physical gap!)
-  {12, "Right Foot",  94.0f, 91.0f,  98.0f}, // CH 12: 94° flat ground, stance leveling 91.5°-97.5° (WIDE physical gap!)
-  {4,  "Left Hip",    94.0f, 85.0f, 103.0f}, // CH 4: 94° neutral, safe stride 87°-101°
-  {8,  "Left Knee",   94.0f, 89.5f,  94.0f}, // CH 8: 94° straight extension, safe lift to 90.5° (WIDE physical gap!)
-  {15, "Left Foot",   94.0f, 91.0f,  98.0f}  // CH 15: 94° flat ground, stance leveling 91.5°-97.5° (WIDE physical gap!)
+  {0,  "Right Hip",   94.0f, 85.0f, 103.0f}, // CH 0: 94° neutral, dynamic stride 85°-103°
+  {1,  "Right Knee",   8.0f,  8.0f,   9.5f}, // CH 1: 8° straight extension, minimal micro-change (8°-9.5°)
+  {12, "Right Foot",  94.0f, 94.0f,  94.0f}, // CH 12: 94° strictly constant
+  {4,  "Left Hip",    94.0f, 85.0f, 103.0f}, // CH 4: 94° neutral, dynamic stride 85°-103°
+  {8,  "Left Knee",   94.0f, 92.5f,  94.0f}, // CH 8: 94° straight extension, minimal micro-change (92.5°-94°)
+  {15, "Left Foot",   94.0f, 94.0f,  94.0f}  // CH 15: 94° strictly constant
 };
 
 // =============================================================================
@@ -70,7 +70,7 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 
 #define DEFAULT_WALK_FREQ_HZ       0.60f  // Stable, judder-free cadence frequency
 #define DEFAULT_STEP_LENGTH_CM     0.85f  // Stable Cartesian stride (keeps CoM within support polygon)
-#define DEFAULT_STEP_CLEARANCE_CM  0.35f  // Safe ground clearance lift (maintains wide knee-foot gap)
+#define DEFAULT_STEP_CLEARANCE_CM  0.25f  // Gentle micro-lift (small knee change)
 #define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
 
 #define ROBOT_TOTAL_WEIGHT_GRAMS   500.0f // Nominal robot mass
