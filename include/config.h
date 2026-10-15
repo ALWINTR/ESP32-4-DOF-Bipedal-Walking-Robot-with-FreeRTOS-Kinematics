@@ -53,11 +53,11 @@ struct JointConfig {
 };
 
 const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
-  {0,  "Right Hip",   94.0f, 85.0f, 103.0f}, // CH 0: 94° neutral, dynamic stride 85°-103°
-  {1,  "Right Knee",   8.0f,  8.0f,   9.5f}, // CH 1: 8° straight extension, minimal micro-change (8°-9.5°)
+  {0,  "Right Hip",   94.0f, 85.0f, 103.0f}, // CH 0: 94° neutral, dynamic stride 85°-103° (±8°)
+  {1,  "Right Knee",   8.0f,  8.0f,  16.5f}, // CH 1: 8° straight extension, bends up to 16.5° (matches hip angle)
   {12, "Right Foot",  94.0f, 94.0f,  94.0f}, // CH 12: 94° strictly constant
-  {4,  "Left Hip",    94.0f, 85.0f, 103.0f}, // CH 4: 94° neutral, dynamic stride 85°-103°
-  {8,  "Left Knee",   94.0f, 92.5f,  94.0f}, // CH 8: 94° straight extension, minimal micro-change (92.5°-94°)
+  {4,  "Left Hip",    94.0f, 85.0f, 103.0f}, // CH 4: 94° neutral, dynamic stride 85°-103° (±8°)
+  {8,  "Left Knee",   94.0f, 85.5f,  94.0f}, // CH 8: 94° straight extension, bends down to 85.5° (matches hip angle)
   {15, "Left Foot",   94.0f, 94.0f,  94.0f}  // CH 15: 94° strictly constant
 };
 
@@ -70,7 +70,7 @@ const JointConfig DEFAULT_JOINTS[NUM_SERVOS] = {
 
 #define DEFAULT_WALK_FREQ_HZ       0.60f  // Stable, judder-free cadence frequency
 #define DEFAULT_STEP_LENGTH_CM     0.85f  // Stable Cartesian stride (keeps CoM within support polygon)
-#define DEFAULT_STEP_CLEARANCE_CM  0.25f  // Gentle micro-lift (small knee change)
+#define DEFAULT_STEP_CLEARANCE_CM  0.40f  // Ground clearance lift matching knee-hip coupling
 #define DEFAULT_STEP_HEIGHT_CM     10.00f // Standing height
 
 #define ROBOT_TOTAL_WEIGHT_GRAMS   500.0f // Nominal robot mass

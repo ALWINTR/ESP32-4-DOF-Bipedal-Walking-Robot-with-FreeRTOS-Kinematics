@@ -87,21 +87,21 @@ static inline float calculateSwingClearance(float stepPhase, float sClear) {
 }
 
 void updateServoPos(float dHip, float dKnee, float dAnkle, char leg) {
-  // Knee micro-change: barely moves (max 1.0 deg), leg stays straight and stable
-  float safeLift = constrain(dKnee * 0.12f, 0.0f, 1.0f);
+  // Knee angle change == Hip angle change during swing (dKnee == dHip)
+  float kneeLift = constrain(fabs(dHip), 0.0f, 8.5f);
 
   if (leg == 'l') {
     // 1. Primary motion: Hip angle changes with stride
     setServoAngle(4,  constrain(getJoint(3)->homeAngle - dHip,     85.0f, 103.0f));
-    // 2. Knee: Small micro-change (max 1.0 deg, 93° - 94°)
-    setServoAngle(8,  constrain(getJoint(4)->homeAngle - safeLift, 93.0f,  94.0f));
+    // 2. Knee angle change equals hip angle change
+    setServoAngle(8,  constrain(getJoint(4)->homeAngle - kneeLift, 85.5f,  94.0f));
     // 3. Foot: Strictly CONSTANT at default angle (94.0°) - ZERO change!
     setServoAngle(15, getJoint(5)->homeAngle);
   } else if (leg == 'r') {
     // 1. Primary motion: Hip angle changes with stride
     setServoAngle(0,  constrain(getJoint(0)->homeAngle + dHip,     85.0f, 103.0f));
-    // 2. Knee: Small micro-change (max 1.0 deg, 8° - 9°)
-    setServoAngle(1,  constrain(getJoint(1)->homeAngle + safeLift,  8.0f,   9.0f));
+    // 2. Knee angle change equals hip angle change
+    setServoAngle(1,  constrain(getJoint(1)->homeAngle + kneeLift,  8.0f,  16.5f));
     // 3. Foot: Strictly CONSTANT at default angle (94.0°) - ZERO change!
     setServoAngle(12, getJoint(2)->homeAngle);
   }
@@ -123,25 +123,27 @@ void updateAllJoints(float xr, float zr, float xl, float zl) {
   IKResult ikL = solveIK(xl, zl);
   IKResult nom = solveIK(0.0f, stepHeight);
 
-  float dHipR   = ikR.hipDeg - nom.hipDeg;
-  float dKneeR  = ikR.kneeDeg - nom.kneeDeg;
+  float dHipR = ikR.hipDeg - nom.hipDeg;
+  float dHipL = ikL.hipDeg - nom.hipDeg;
 
-  float dHipL   = ikL.hipDeg - nom.hipDeg;
-  float dKneeL  = ikL.kneeDeg - nom.kneeDeg;
+  // Knee angle change == Hip angle change during swing (dKnee == dHip)
+  // When hip strides forward, knee bends equally to lift foot and move robot!
+  // In stance, knee stays straight at home extension.
+  bool inSwingR = (zr < stepHeight - 0.05f) || (xr > 0.05f && zr <= stepHeight);
+  bool inSwingL = (zl < stepHeight - 0.05f) || (xl > 0.05f && zl <= stepHeight);
 
-  // Knee micro-change: barely moves (max 1.0 deg), leg stays straight and stable
-  float safeLiftR = constrain(dKneeR * 0.12f, 0.0f, 1.0f);
-  float safeLiftL = constrain(dKneeL * 0.12f, 0.0f, 1.0f);
+  float kneeLiftR = inSwingR ? constrain(fabs(dHipR), 0.0f, 8.5f) : 0.0f;
+  float kneeLiftL = inSwingL ? constrain(fabs(dHipL), 0.0f, 8.5f) : 0.0f;
 
-  // 1. PRIMARY MOTION: Hips change angle according to stride
+  // 1. FIRST: Both Hips (Stride motion)
   setServoAngle(0, constrain(getJoint(0)->homeAngle + dHipR, 85.0f, 103.0f));
   setServoAngle(4, constrain(getJoint(3)->homeAngle - dHipL, 85.0f, 103.0f));
 
-  // 2. KNEES: Small micro-change (max 1.0 deg, do not move knee)
-  setServoAngle(1, constrain(getJoint(1)->homeAngle + safeLiftR, 8.0f,   9.0f));
-  setServoAngle(8, constrain(getJoint(4)->homeAngle - safeLiftL, 93.0f,  94.0f));
+  // 2. SECOND: Both Knees (Knee angle change == Hip angle change)
+  setServoAngle(1, constrain(getJoint(1)->homeAngle + kneeLiftR, 8.0f,  16.5f));
+  setServoAngle(8, constrain(getJoint(4)->homeAngle - kneeLiftL, 85.5f, 94.0f));
 
-  // 3. FEET: Strictly CONSTANT at 94.0 deg (ZERO change)
+  // 3. LAST: Both Feet strictly CONSTANT at 94.0° (ZERO change)
   setServoAngle(12, getJoint(2)->homeAngle); // Exactly 94.0° constant
   setServoAngle(15, getJoint(5)->homeAngle); // Exactly 94.0° constant
 }
